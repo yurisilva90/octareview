@@ -5,6 +5,7 @@ Aplicação mobile-first da OctaReview: organiza leads do primeiro contato ao p�
 ## O que está pronto
 
 - área comercial mobile em `/comercial`, com visão do dia, leads, follow-ups, fechamento, clientes e modo de apresentação;
+- painel interno desktop-first em `/gestao`, com visão executiva, distribuição de leads, carteira de clientes, tags, cobrança, catálogo de produtos, placas, equipe e configurações;
 - todo diagnóstico iniciado pela área comercial cria ou atualiza um lead;
 - filtros por potencial, situação de follow-up, etapa e busca;
 - dados do lead salvos localmente no aparelho nesta fase;
@@ -49,6 +50,8 @@ O arquivo `render.yaml` deixa pronta uma publicação como Web Service no Render
 ## Limites conscientes desta versão
 
 - os indicadores da tela comercial estão marcados como demonstração; somente o diagnóstico conectado à Apify usa dados ao vivo;
+- o painel de gestão usa dados demonstrativos e deixa a interface preparada para banco de dados, autenticação por papéis e integração futura com Asaas;
+- a rota `/gestao` não deve receber dados reais em uma publicação aberta antes da implementação da autenticação e das permissões;
 - a posição é uma fotografia de uma consulta e região, não uma grade geográfica;
 - a análise de respostas e temas usa uma amostra recente;
 - campos não detectados devem ser confirmados antes da apresentação;
