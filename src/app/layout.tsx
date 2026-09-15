@@ -1,10 +1,26 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Reputta — Diagnóstico de presença local",
-  description: "Diagnóstico comercial de reputação e visibilidade local.",
+  title: "OctaReview — Inteligência comercial e reputação",
+  description: "Gestão comercial, diagnóstico de presença local e reputação para negócios.",
+  applicationName: "OctaReview",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/octareview-icon.png",
+    apple: "/octareview-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "OctaReview",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#052b58",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

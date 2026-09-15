@@ -1,10 +1,13 @@
-# Reputta — diagnóstico comercial v1
+# OctaReview — inteligência comercial e reputação
 
-Primeiro fluxo funcional da Reputta: recebe empresa e localização, com uma categoria de comparação opcional; identifica a categoria automaticamente quando ela fica vazia; executa duas coletas na Apify; normaliza os dados; e produz um diagnóstico comercial explicável.
+Aplicação mobile-first da OctaReview: organiza leads do primeiro contato ao pós-venda, gera diagnósticos conectados à Apify e transforma automaticamente cada diagnóstico em uma oportunidade comercial acompanhável.
 
 ## O que está pronto
 
-- área comercial mobile em `/comercial`, com visão do dia, prospects, ficha de abordagem, diagnóstico e modo de apresentação;
+- área comercial mobile em `/comercial`, com visão do dia, leads, follow-ups, fechamento, clientes e modo de apresentação;
+- todo diagnóstico iniciado pela área comercial cria ou atualiza um lead;
+- filtros por potencial, situação de follow-up, etapa e busca;
+- dados do lead salvos localmente no aparelho nesta fase;
 - coleta detalhada do estabelecimento-alvo;
 - identificação automática da categoria informada no perfil do Google;
 - coleta leve de concorrentes da mesma categoria e região;

@@ -94,7 +94,7 @@ export default function DiagnosticWorkspace() {
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between px-4 sm:h-[72px] sm:px-5 lg:px-8">
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center rounded-xl bg-[#5366d9] text-white shadow-[0_8px_24px_rgba(83,102,217,.28)]"><Sparkles size={17} fill="currentColor" /></div>
-            <div><p className="text-[17px] font-semibold tracking-[-0.03em]">Reputta</p><p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#8993ab]">Inteligência local</p></div>
+            <div><p className="text-[17px] font-semibold tracking-[-0.03em]">OctaReview</p><p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#8993ab]">Inteligência local</p></div>
           </div>
           <div className="flex items-center gap-2 rounded-full border border-[#e6eaf3] bg-[#fafbfe] px-3 py-1.5 text-xs font-medium text-[#66718b]">
             <span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-50" /><span className="relative inline-flex size-2 rounded-full bg-emerald-500" /></span>

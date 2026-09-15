@@ -1,5 +1,5 @@
-import DiagnosticWorkspace from "./components/diagnostic-workspace";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <DiagnosticWorkspace />;
+  redirect("/comercial");
 }
