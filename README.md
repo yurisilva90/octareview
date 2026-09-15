@@ -44,6 +44,8 @@ O código pode ser versionado normalmente no GitHub. A automação em `.github/w
 
 O GitHub Pages, isoladamente, não executa a rota dinâmica `/api/diagnostics`. Para preservar o token da Apify no servidor, a publicação completa precisa combinar o repositório GitHub com um ambiente que execute Next.js ou separar a API em um serviço de backend. O token nunca deve ser colocado em variáveis públicas ou no código do navegador.
 
+O arquivo `render.yaml` deixa pronta uma publicação como Web Service no Render, com URL HTTPS própria e deploy somente depois que os checks do GitHub passam. Na primeira criação, o painel solicita `APIFY_API_TOKEN` como segredo sem gravá-lo no repositório.
+
 ## Limites conscientes desta versão
 
 - os indicadores da tela comercial estão marcados como demonstração; somente o diagnóstico conectado à Apify usa dados ao vivo;
