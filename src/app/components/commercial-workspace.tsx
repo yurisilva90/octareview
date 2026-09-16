@@ -11,6 +11,8 @@ import {
   Presentation, Route, Search, Star, Target, UserRound, UsersRound, X,
 } from "lucide-react";
 import type { DiagnosticReport } from "@/lib/types";
+import { requestDiagnostic } from "@/lib/supabase/diagnostics";
+import { withBasePath } from "@/lib/site";
 import { DiagnosticReportView } from "./diagnostic-workspace";
 
 type MainView = "today" | "leads" | "plates" | "more";
@@ -44,6 +46,7 @@ type Lead = {
   createdAt: string;
   lastContactAt: string;
   clientSince?: string;
+  databaseAccountId?: number;
 };
 
 type LeadDraft = {
@@ -209,6 +212,7 @@ export default function CommercialWorkspace() {
       opportunity: report?.summary.narrative ?? "Diagnóstico ainda não realizado.",
       approach: report?.opportunities[0]?.solution ?? "Entender o momento do negócio e preparar o diagnóstico antes da abordagem.",
       purchaseUrl: "", createdAt: new Date().toISOString(), lastContactAt: new Date().toISOString(),
+      databaseAccountId: report?.accountId,
     };
     setLeads((items) => [lead, ...items]); setSelectedId(id);
     return id;
@@ -223,13 +227,18 @@ export default function CommercialWorkspace() {
   async function requestReport(mode: "live" | "demo", leadId?: string) {
     setLoading(true); setError(null);
     try {
-      const response = await fetch("/api/diagnostics", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName: draft.businessName, location: draft.location, category: draft.category.trim() || undefined, maxCompetitors: 10, maxReviews: 40, mode }),
+      const report = await requestDiagnostic({
+        businessName: draft.businessName,
+        location: draft.location,
+        category: draft.category.trim(),
+        maxCompetitors: 10,
+        maxReviews: 40,
+        mode,
+        accountId: leadId ? selected?.databaseAccountId : undefined,
+        responsible: draft.responsible,
+        phone: draft.phone,
+        email: draft.email,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Não foi possível gerar o diagnóstico.");
-      const report = data as DiagnosticReport;
       const targetId = leadId || createLead(report);
       if (leadId) {
         updateLead(leadId, {
@@ -240,6 +249,7 @@ export default function CommercialWorkspace() {
           stage: selected.stage === "Novo" ? "Diagnóstico apresentado" : selected.stage,
           followUp: selected.followUp === "Sem retorno" ? "Aguardando retorno" : selected.followUp,
           lastContactAt: new Date().toISOString(),
+          databaseAccountId: report.accountId ?? selected.databaseAccountId,
         });
       }
       setReports((items) => ({ ...items, [targetId]: report })); setSelectedId(targetId); setView("report");
@@ -279,7 +289,7 @@ function CommercialHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-[#dbe7ec] bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-[760px] items-center justify-between px-4 sm:px-6">
-        <Image src="/octareview-wordmark.png" alt="OctaReview" width={150} height={50} className="h-10 w-auto object-contain" priority />
+        <Image src={withBasePath("/octareview-wordmark.png")} alt="OctaReview" width={150} height={50} className="h-10 w-auto object-contain" priority />
         <div className="flex items-center gap-2"><span className="hidden text-right sm:block"><span className="block text-xs font-semibold">Área comercial</span><span className="block text-[11px] text-[#718495]">Teresópolis · campo</span></span><button aria-label="Perfil comercial" className="flex size-10 items-center justify-center rounded-full border border-[#d9e5ea] bg-[#f5f9fa] text-[#38576d]"><UserRound size={18} /></button></div>
       </div>
     </header>

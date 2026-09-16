@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import CommercialWorkspace from "../components/commercial-workspace";
+import AuthGate from "../components/auth-gate";
 
 export const metadata: Metadata = {
   title: "OctaReview Comercial",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function CommercialPage() {
-  return <CommercialWorkspace />;
+  return <AuthGate><CommercialWorkspace /></AuthGate>;
 }

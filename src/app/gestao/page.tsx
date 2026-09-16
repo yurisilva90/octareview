@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import ManagementWorkspace from "../components/management-workspace";
+import AuthGate from "../components/auth-gate";
 
 export const metadata: Metadata = {
   title: "Gestão interna | OctaReview",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function ManagementPage() {
-  return <ManagementWorkspace />;
+  return <AuthGate><ManagementWorkspace /></AuthGate>;
 }
