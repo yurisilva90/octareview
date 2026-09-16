@@ -8,7 +8,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "OctaReview",
     short_name: "OctaReview",
     description: "Inteligência comercial, diagnóstico e gestão de reputação.",
-    start_url: withBasePath("/comercial/"),
+    start_url: withBasePath("/app/"),
     display: "standalone",
     background_color: "#f3f7fa",
     theme_color: "#052b58",

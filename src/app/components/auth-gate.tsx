@@ -5,7 +5,7 @@ import { LoaderCircle } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { withBasePath } from "@/lib/site";
 
-export default function AuthGate({ children }: { children: ReactNode }) {
+export default function AuthGate({ children, redirectTo = "/app/" }: { children: ReactNode; redirectTo?: string }) {
   const [state, setState] = useState<"checking" | "authorized" | "demo">(
     () => getSupabaseBrowserClient() ? "checking" : "demo",
   );
@@ -16,9 +16,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) setState("authorized");
-      else window.location.assign(withBasePath("/login/"));
+      else {
+        window.sessionStorage.setItem("octareview:after-login", redirectTo);
+        window.location.assign(withBasePath("/login/"));
+      }
     });
-  }, []);
+  }, [redirectTo]);
 
   if (state === "checking") {
     return <main className="flex min-h-screen items-center justify-center bg-[#f3f7fa]"><LoaderCircle className="size-6 animate-spin text-[#075f6a]" /></main>;

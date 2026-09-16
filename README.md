@@ -4,8 +4,9 @@ Plataforma da OctaReview: organiza leads do primeiro contato ao pós-venda, gera
 
 ## O que está pronto
 
-- área comercial mobile em `/comercial`, com visão do dia, leads, follow-ups, fechamento, clientes e modo de apresentação;
-- painel interno desktop-first em `/gestao`, com visão executiva, distribuição de leads, carteira de clientes, tags, cobrança, catálogo de produtos, placas, equipe e configurações;
+- área comercial mobile em `/app`, com visão do dia, leads, follow-ups, fechamento, clientes e modo de apresentação;
+- painel interno desktop-first em `/adm`, com visão executiva, distribuição de leads, carteira de clientes, tags, cobrança, catálogo de produtos, placas, equipe e configurações;
+- painel do cliente em `/cliente`, conectado ao mesmo cadastro de estabelecimento e preparado para presença, reputação, placas, contatos e serviços;
 - todo diagnóstico iniciado pela área comercial cria ou atualiza um lead;
 - filtros por potencial, situação de follow-up, etapa e busca;
 - dados do lead salvos localmente no aparelho nesta fase;
@@ -24,7 +25,7 @@ Plataforma da OctaReview: organiza leads do primeiro contato ao pós-venda, gera
 
 ## Arquitetura
 
-- **GitHub Pages:** interface web estática em `/comercial`, `/gestao` e, futuramente, `/cliente`.
+- **GitHub Pages:** interface web estática em `/app`, `/adm` e `/cliente`.
 - **Supabase Auth:** login e sessões.
 - **Supabase Postgres:** organizações, membros, empresas, leads, clientes, tags, follow-ups, diagnósticos, produtos, assinaturas, cobranças, pagamentos, placas e configurações.
 - **Supabase Edge Functions:** integrações que precisam de segredo, começando pela Apify e depois pelo Asaas.
@@ -61,7 +62,7 @@ Configure no repositório, em **Settings → Secrets and variables → Actions �
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-Depois, em **Settings → Pages**, selecione **GitHub Actions** como origem. A URL padrão será `https://yurisilva90.github.io/octareview-app/`.
+Depois, em **Settings → Pages**, selecione **GitHub Actions** como origem. A URL padrão será `https://yurisilva90.github.io/octareview/`.
 
 ## Limites conscientes desta versão
 

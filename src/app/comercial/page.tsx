@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import CommercialWorkspace from "../components/commercial-workspace";
-import AuthGate from "../components/auth-gate";
+import RouteRedirect from "../components/route-redirect";
 
 export const metadata: Metadata = {
   title: "OctaReview Comercial",
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function CommercialPage() {
-  return <AuthGate><CommercialWorkspace /></AuthGate>;
+  return <RouteRedirect to="/app/" />;
 }

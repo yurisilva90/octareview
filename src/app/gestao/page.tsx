@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import ManagementWorkspace from "../components/management-workspace";
-import AuthGate from "../components/auth-gate";
+import RouteRedirect from "../components/route-redirect";
 
 export const metadata: Metadata = {
   title: "Gestão interna | OctaReview",
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function ManagementPage() {
-  return <AuthGate><ManagementWorkspace /></AuthGate>;
+  return <RouteRedirect to="/adm/" />;
 }

@@ -6,6 +6,16 @@ import { ArrowRight, CheckCircle2, KeyRound, LoaderCircle, Mail } from "lucide-r
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { withBasePath } from "@/lib/site";
 
+function destination() {
+  return window.sessionStorage.getItem("octareview:after-login") ?? "/app/";
+}
+
+function finishLogin() {
+  const next = destination();
+  window.sessionStorage.removeItem("octareview:after-login");
+  window.location.assign(withBasePath(next));
+}
+
 export default function LoginWorkspace() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +27,7 @@ export default function LoginWorkspace() {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
     void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.replace(withBasePath("/comercial/"));
+      if (data.session) finishLogin();
     });
   }, []);
 
@@ -28,7 +38,7 @@ export default function LoginWorkspace() {
       if (!supabase) throw new Error("O Supabase ainda não foi conectado ao site.");
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       if (signInError) throw signInError;
-      window.location.assign(withBasePath("/comercial/"));
+      finishLogin();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Não foi possível entrar.");
     } finally { setLoading(false); }
@@ -41,7 +51,7 @@ export default function LoginWorkspace() {
       if (!supabase) throw new Error("O Supabase ainda não foi conectado ao site.");
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}${withBasePath("/comercial/")}` },
+        options: { shouldCreateUser: false, emailRedirectTo: `${window.location.origin}${withBasePath(destination())}` },
       });
       if (otpError) throw otpError;
       setMessage("Link de acesso enviado. Confira seu e-mail.");
