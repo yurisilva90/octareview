@@ -61,7 +61,7 @@ Configure no repositório, em **Settings → Secrets and variables → Actions �
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-Depois, em **Settings → Pages**, selecione **GitHub Actions** como origem. A URL padrão será `https://yurisilva90.github.io/octareview/`.
+Depois, em **Settings → Pages**, selecione **GitHub Actions** como origem. A URL padrão será `https://yurisilva90.github.io/octareview-app/`.
 
 ## Limites conscientes desta versão
 
