@@ -125,6 +125,28 @@ function parseBody(value: RequestBody): DiagnosticInput & Omit<RequestBody, keyo
   };
 }
 
+async function getApifyToken(supabaseUrl: string) {
+  const environmentToken = Deno.env.get("APIFY_API_TOKEN");
+  if (environmentToken) return environmentToken;
+
+  const secretKeys = Deno.env.get("SUPABASE_SECRET_KEYS");
+  const serviceKey = secretKeys
+    ? (JSON.parse(secretKeys).default as string | undefined)
+    : Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!serviceKey) throw new Error("A função não possui credencial interna para acessar o Vault.");
+
+  const admin = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await admin.rpc("get_integration_secret", {
+    requested_name: "APIFY_API_TOKEN",
+  });
+  if (error || typeof data !== "string" || !data) {
+    throw new Error("O token da Apify ainda não foi configurado no Vault.");
+  }
+  return data;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) });
   if (request.method !== "POST") return json(request, { error: "Método não permitido." }, 405);
@@ -135,8 +157,8 @@ Deno.serve(async (request) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const publishableKeys = Deno.env.get("SUPABASE_PUBLISHABLE_KEYS");
-    const apifyToken = Deno.env.get("APIFY_API_TOKEN");
-    if (!supabaseUrl || !publishableKeys || !apifyToken) throw new Error("A função ainda não possui todos os segredos necessários.");
+    if (!supabaseUrl || !publishableKeys) throw new Error("A função ainda não possui todos os segredos necessários.");
+    const apifyToken = await getApifyToken(supabaseUrl);
     const publishableKey = JSON.parse(publishableKeys).default as string;
     const supabase = createClient(supabaseUrl, publishableKey, { global: { headers: { Authorization: authorization } } });
     const { data: userData, error: userError } = await supabase.auth.getUser();
