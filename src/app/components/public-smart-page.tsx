@@ -110,12 +110,12 @@ export default function PublicSmartPage() {
   const radius = page.buttonShape === "square" ? "rounded-none" : page.buttonShape === "round" ? "rounded-full" : "rounded-xl";
 
   return <main className="min-h-screen px-3 py-5 text-slate-950 sm:py-10" style={surfaceStyle}>
-    <article className="mx-auto max-w-[520px] overflow-hidden rounded-[28px] bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,.24)] backdrop-blur-sm">
-      <div className="relative h-48 overflow-hidden" style={{ ...(!page.coverUrl ? surfaceStyle : {}), ...coverShapeStyle(page.coverShape) }}>
+    <article className="mx-auto max-w-[520px] overflow-hidden rounded-[28px] shadow-[0_24px_80px_rgba(15,23,42,.24)] backdrop-blur-sm" style={surfaceStyle}>
+      <div className="relative z-0 h-48 overflow-hidden" style={{ ...(!page.coverUrl ? surfaceStyle : {}), ...coverShapeStyle(page.coverShape) }}>
         {page.coverUrl && page.coverType === "video" ? <video src={page.coverUrl} className="size-full object-cover" muted autoPlay loop playsInline /> : page.coverUrl ? <div className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${page.coverUrl})` }} /> : null}
       </div>
-      <div className="px-5 pb-7 sm:px-8">
-        <div className="flex flex-col items-center text-center"><div className="-mt-12 size-24 overflow-hidden rounded-full bg-slate-900 bg-contain bg-center bg-no-repeat shadow-lg" style={{ ...(page.logoUrl ? { backgroundImage: `url(${page.logoUrl})` } : {}), borderColor: page.profileBorderColor, borderWidth: page.profileBorderEnabled ? 4 : 0 }}>{!page.logoUrl && <span className="grid size-full place-items-center text-xl font-bold text-white">{page.name.slice(0, 2).toUpperCase()}</span>}</div>
+      <div className="relative z-10 px-5 pb-7 sm:px-8">
+        <div className="flex flex-col items-center text-center"><div className="relative z-20 -mt-12 size-24 overflow-hidden rounded-full bg-slate-900 bg-contain bg-center bg-no-repeat shadow-lg" style={{ ...(page.logoUrl ? { backgroundImage: `url(${page.logoUrl})` } : {}), borderColor: page.profileBorderColor, borderWidth: page.profileBorderEnabled !== false ? 4 : 0 }}>{!page.logoUrl && <span className="grid size-full place-items-center text-xl font-bold text-white">{page.name.slice(0, 2).toUpperCase()}</span>}</div>
         <h1 className="mt-4 text-3xl font-bold tracking-[-.045em]">{page.name}</h1>
         {page.shortDescription && <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{page.shortDescription}</p>}
         {page.presentationText && <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-500">{page.presentationText}</p>}</div>
