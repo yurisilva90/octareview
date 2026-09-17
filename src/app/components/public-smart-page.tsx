@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from
 import {
   BriefcaseBusiness, CalendarDays, Camera, CheckCircle2, FileDown, Gift, Globe2, Link2,
   LoaderCircle, MapPin, MessageCircle, Music2, Play, Send, ShoppingBag, Star,
-  Users, UtensilsCrossed,
+  Users, UtensilsCrossed, Mail, UserRound,
 } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import BrandIcon from "./brand-icon";
 
 type CaptureField = { key: string; label: string; required?: boolean };
 type CaptureConfig = { title?: string; description?: string; button_text?: string; success_message?: string; consent_required?: boolean; consent_text?: string; fields?: CaptureField[] };
@@ -15,7 +16,7 @@ type PublicPage = {
   primaryColor: string; logoUrl: string | null; coverUrl: string | null; coverType: "image" | "video" | "animation";
   backgroundMode: "solid" | "preset"; backgroundValue: string; buttonColor: string; highlightColor: string;
   formButtonColor: string; buttonShape: "square" | "soft" | "round"; buttonVariant: "filled" | "outline";
-  buttonBorderWidth: 1 | 2 | 3; footerText: string | null; captureEnabled: boolean; captureConfig: CaptureConfig;
+  buttonBorderWidth: 1 | 2 | 3; buttonEffect: "none" | "shadow" | "lift" | "glow"; formBackgroundColor: string; formBorderColor: string; formBorderWidth: 0 | 1 | 2 | 3; formEffect: "none" | "shadow" | "glass" | "glow"; coverShape: "straight" | "curve" | "wave"; profileBorderEnabled: boolean; profileBorderColor: string; footerText: string | null; captureEnabled: boolean; captureConfig: CaptureConfig;
 };
 type PublicLink = { public_id: string; link_type: string; title: string; subtitle: string | null; url: string; sort_order: number; highlighted: boolean; button_color: string | null };
 
@@ -35,10 +36,16 @@ const presetStyles: Record<string, CSSProperties> = {
 };
 
 function IconFor({ type, className = "size-5" }: { type: string; className?: string }) {
+  if (socialTypes.has(type)) return <BrandIcon type={type} className={className} />;
   const icons: Record<string, typeof Link2> = { whatsapp: MessageCircle, google_review: Star, menu: UtensilsCrossed, map: MapPin, website: Globe2, booking: CalendarDays, reservation: CalendarDays, payment: ShoppingBag, pix: ShoppingBag, instagram: Camera, facebook: Users, tiktok: Music2, youtube: Play, linkedin: BriefcaseBusiness, download: FileDown, benefit: Gift };
   const Icon = icons[type] ?? Link2;
   return <Icon className={className} />;
 }
+
+function buttonEffectClass(effect: PublicPage["buttonEffect"]) { return effect === "shadow" ? "shadow-[0_7px_16px_rgba(15,23,42,.18)]" : effect === "lift" ? "-translate-y-0.5 shadow-[0_10px_20px_rgba(15,23,42,.22)]" : effect === "glow" ? "shadow-[0_0_18px_currentColor]" : ""; }
+function formEffectClass(effect: PublicPage["formEffect"]) { return effect === "shadow" ? "shadow-[0_10px_28px_rgba(15,23,42,.14)]" : effect === "glass" ? "backdrop-blur-md" : effect === "glow" ? "shadow-[0_0_24px_rgba(13,148,136,.28)]" : ""; }
+function coverShapeStyle(shape: PublicPage["coverShape"]): CSSProperties { return shape === "curve" ? { borderBottomLeftRadius: "50% 12%", borderBottomRightRadius: "50% 12%" } : shape === "wave" ? { clipPath: "polygon(0 0,100% 0,100% 86%,82% 93%,64% 88%,45% 98%,24% 90%,0 96%)" } : {}; }
+function FormFieldIcon({ fieldKey }: { fieldKey: string }) { if (fieldKey === "whatsapp") return <MessageCircle className="size-4 text-emerald-600" />; if (fieldKey === "email") return <Mail className="size-4 text-slate-500" />; if (fieldKey === "birth_date") return <CalendarDays className="size-4 text-slate-500" />; return <UserRound className="size-4 text-slate-500" />; }
 
 function eventFor(type: string) {
   const direct: Record<string, string> = { google_review: "google_review_click", whatsapp: "whatsapp_click", website: "website_click", instagram: "instagram_click", facebook: "facebook_click", tiktok: "tiktok_click", youtube: "youtube_click", linkedin: "linkedin_click", map: "map_click", menu: "menu_click", delivery: "delivery_click", booking: "booking_click", reservation: "booking_click", pix: "pix_click", payment: "payment_click" };
@@ -104,11 +111,11 @@ export default function PublicSmartPage() {
 
   return <main className="min-h-screen px-3 py-5 text-slate-950 sm:py-10" style={surfaceStyle}>
     <article className="mx-auto max-w-[520px] overflow-hidden rounded-[28px] bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,.24)] backdrop-blur-sm">
-      <div className="relative h-48 overflow-hidden" style={!page.coverUrl ? surfaceStyle : undefined}>
+      <div className="relative h-48 overflow-hidden" style={{ ...(!page.coverUrl ? surfaceStyle : {}), ...coverShapeStyle(page.coverShape) }}>
         {page.coverUrl && page.coverType === "video" ? <video src={page.coverUrl} className="size-full object-cover" muted autoPlay loop playsInline /> : page.coverUrl ? <div className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${page.coverUrl})` }} /> : null}
       </div>
       <div className="px-5 pb-7 sm:px-8">
-        <div className="flex flex-col items-center text-center"><div className="-mt-12 size-24 overflow-hidden rounded-full border-4 border-white bg-slate-900 bg-contain bg-center bg-no-repeat shadow-lg" style={page.logoUrl ? { backgroundImage: `url(${page.logoUrl})` } : undefined}>{!page.logoUrl && <span className="grid size-full place-items-center text-xl font-bold text-white">{page.name.slice(0, 2).toUpperCase()}</span>}</div>
+        <div className="flex flex-col items-center text-center"><div className="-mt-12 size-24 overflow-hidden rounded-full bg-slate-900 bg-contain bg-center bg-no-repeat shadow-lg" style={{ ...(page.logoUrl ? { backgroundImage: `url(${page.logoUrl})` } : {}), borderColor: page.profileBorderColor, borderWidth: page.profileBorderEnabled ? 4 : 0 }}>{!page.logoUrl && <span className="grid size-full place-items-center text-xl font-bold text-white">{page.name.slice(0, 2).toUpperCase()}</span>}</div>
         <h1 className="mt-4 text-3xl font-bold tracking-[-.045em]">{page.name}</h1>
         {page.shortDescription && <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{page.shortDescription}</p>}
         {page.presentationText && <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-500">{page.presentationText}</p>}</div>
@@ -116,12 +123,12 @@ export default function PublicSmartPage() {
         <div className="mt-7 space-y-3">{contentLinks.map((link) => {
           const color = link.button_color || (link.highlighted ? page.highlightColor : page.buttonColor);
           const filled = link.highlighted || page.buttonVariant === "filled";
-          return <button key={link.public_id} onClick={() => openLink(link)} className={`flex min-h-14 w-full items-center justify-center gap-3 px-5 text-sm font-bold transition hover:-translate-y-0.5 hover:shadow-md ${radius}`} style={filled ? { backgroundColor: color, borderColor: color, borderWidth: page.buttonBorderWidth, color: "white" } : { backgroundColor: "transparent", borderColor: color, borderWidth: page.buttonBorderWidth, color }}><IconFor type={link.link_type} />{link.title}</button>;
+          return <button key={link.public_id} onClick={() => openLink(link)} className={`flex min-h-14 w-full items-center justify-center gap-3 px-5 text-sm font-bold transition hover:-translate-y-0.5 hover:shadow-md ${radius} ${buttonEffectClass(page.buttonEffect)}`} style={filled ? { backgroundColor: color, borderColor: color, borderWidth: page.buttonBorderWidth, color: "white" } : { backgroundColor: "transparent", borderColor: color, borderWidth: page.buttonBorderWidth, color }}><IconFor type={link.link_type} />{link.title}</button>;
         })}</div>
 
         {socialLinks.length > 0 && <div className="mt-6 flex flex-wrap justify-center gap-3">{socialLinks.map((link) => <button key={link.public_id} onClick={() => openLink(link)} aria-label={link.title} className="grid size-11 place-items-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:-translate-y-0.5"><IconFor type={link.link_type} /></button>)}</div>}
 
-        {page.captureEnabled && <section className="mt-8 rounded-2xl bg-slate-50 p-5"><h2 className="text-lg font-bold">{config.title || "Receba novidades"}</h2>{config.description && <p className="mt-2 text-sm leading-6 text-slate-500">{config.description}</p>}{success ? <div className="mt-5 flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="size-5" />{success}</div> : <form onSubmit={submitContact} className="mt-5 space-y-3"><input name="website" tabIndex={-1} autoComplete="off" className="hidden" />{fields.map((field) => <label key={field.key} className="block text-xs font-semibold text-slate-600">{field.label || fieldNames[field.key] || field.key}<input required={field.required} name={field.key} type={field.key === "email" ? "email" : field.key === "birth_date" ? "date" : field.key === "whatsapp" ? "tel" : "text"} className="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500" /></label>)}{config.consent_required !== false && <label className="flex gap-3 text-xs leading-5 text-slate-500"><input required name="consent" type="checkbox" className="mt-1 size-4 shrink-0 accent-teal-700" /><span>{config.consent_text || "Concordo em receber comunicações deste estabelecimento."}</span></label>}<button disabled={sending} className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold text-white disabled:opacity-60" style={{ backgroundColor: page.formButtonColor }}>{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}{config.button_text || "Quero participar"}</button></form>}</section>}
+        {page.captureEnabled && <section className={`mt-8 rounded-2xl p-5 ${formEffectClass(page.formEffect)}`} style={{ backgroundColor: page.formBackgroundColor, borderColor: page.formBorderColor, borderWidth: page.formBorderWidth }}><h2 className="text-lg font-bold">{config.title || "Receba novidades"}</h2>{config.description && <p className="mt-2 text-sm leading-6 text-slate-500">{config.description}</p>}{success ? <div className="mt-5 flex items-center gap-3 rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="size-5" />{success}</div> : <form onSubmit={submitContact} className="mt-5 space-y-3"><input name="website" tabIndex={-1} autoComplete="off" className="hidden" />{fields.map((field) => <label key={field.key} className="block text-xs font-semibold text-slate-600">{field.label || fieldNames[field.key] || field.key}<span className="mt-2 flex h-12 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3"><FormFieldIcon fieldKey={field.key} /><input required={field.required} name={field.key} type={field.key === "email" ? "email" : field.key === "birth_date" ? "date" : field.key === "whatsapp" ? "tel" : "text"} className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></span></label>)}{config.consent_required !== false && <label className="flex gap-3 text-xs leading-5 text-slate-500"><input required name="consent" type="checkbox" className="mt-1 size-4 shrink-0 accent-teal-700" /><span>{config.consent_text || "Concordo em receber comunicações deste estabelecimento."}</span></label>}<button disabled={sending} className="flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold text-white disabled:opacity-60" style={{ backgroundColor: page.formButtonColor }}>{sending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}{config.button_text || "Quero participar"}</button></form>}</section>}
         {error && <p className="mt-5 rounded-xl bg-rose-50 p-3 text-xs text-rose-700">{error}</p>}
         <footer className="mt-8 border-t border-slate-100 pt-5 text-center text-xs leading-5 text-slate-400">{page.footerText || "Página inteligente por OctaReview"}</footer>
       </div>

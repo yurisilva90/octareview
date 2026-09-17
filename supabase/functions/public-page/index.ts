@@ -94,7 +94,7 @@ async function handler(request: Request) {
 
     const { data: page, error: pageError } = await supabaseAdmin
       .from("smart_pages")
-      .select("id,public_id,organization_id,account_id,slug,name,short_description,presentation_text,primary_color,logo_url,cover_url,cover_type,background_mode,background_value,button_color,highlight_color,form_button_color,button_shape,button_variant,button_border_width,footer_text,capture_enabled,capture_config,published_at")
+      .select("id,public_id,organization_id,account_id,slug,name,short_description,presentation_text,primary_color,logo_url,cover_url,cover_type,background_mode,background_value,button_color,highlight_color,form_button_color,button_shape,button_variant,button_border_width,button_effect,form_background_color,form_border_color,form_border_width,form_effect,cover_shape,profile_border_enabled,profile_border_color,footer_text,capture_enabled,capture_config,published_at")
       .eq("slug", slug)
       .eq("status", "published")
       .not("published_at", "is", null)
@@ -123,6 +123,9 @@ async function handler(request: Request) {
           backgroundMode: page.background_mode, backgroundValue: page.background_value,
           buttonColor: page.button_color, highlightColor: page.highlight_color, formButtonColor: page.form_button_color,
           buttonShape: page.button_shape, buttonVariant: page.button_variant, buttonBorderWidth: page.button_border_width,
+          buttonEffect: page.button_effect, formBackgroundColor: page.form_background_color, formBorderColor: page.form_border_color,
+          formBorderWidth: page.form_border_width, formEffect: page.form_effect, coverShape: page.cover_shape,
+          profileBorderEnabled: page.profile_border_enabled, profileBorderColor: page.profile_border_color,
           footerText: page.footer_text, captureEnabled: page.capture_enabled, captureConfig: page.capture_config,
         },
         links: publicLinks,

@@ -85,7 +85,7 @@ export default function ClientWorkspace() {
     const [platesResult, employeesResult, pageResult, contactsResult, eventsResult, subscriptionsResult] = await Promise.all([
       supabase.from("plates").select("id,public_id,plate_type,lifecycle_status,display_name,location_label,destination_mode,activated_at").eq("account_id", account.id).order("created_at"),
       supabase.from("employees").select("id,full_name,job_title,photo_url,status").eq("account_id", account.id).order("full_name"),
-      supabase.from("smart_pages").select("id,slug,status,page_type,is_primary,name,short_description,presentation_text,primary_color,logo_url,cover_url,cover_type,background_mode,background_value,button_color,highlight_color,form_button_color,button_shape,button_variant,button_border_width,footer_text,capture_enabled,capture_config,draft_version,published_version,published_at").eq("account_id", account.id).order("is_primary", { ascending: false }).order("created_at"),
+      supabase.from("smart_pages").select("id,slug,status,page_type,is_primary,name,short_description,presentation_text,primary_color,logo_url,cover_url,cover_type,background_mode,background_value,button_color,highlight_color,form_button_color,button_shape,button_variant,button_border_width,button_effect,form_background_color,form_border_color,form_border_width,form_effect,cover_shape,profile_border_enabled,profile_border_color,footer_text,capture_enabled,capture_config,draft_version,published_version,published_at").eq("account_id", account.id).order("is_primary", { ascending: false }).order("created_at"),
       supabase.from("captured_contacts").select("id,full_name,whatsapp,email,source,campaign,consent_accepted,captured_at").eq("account_id", account.id).order("captured_at", { ascending: false }).limit(100),
       supabase.from("interaction_events").select("event_type,source,occurred_at").eq("account_id", account.id).gte("occurred_at", since.toISOString()).order("occurred_at", { ascending: false }).limit(2000),
       supabase.from("subscriptions").select("id,status,quantity,unit_price,billing_interval,products(name,features)").eq("account_id", account.id).order("created_at", { ascending: false }),
@@ -174,6 +174,9 @@ export default function ClientWorkspace() {
         cover_type: smartPage.cover_type, background_mode: smartPage.background_mode, background_value: smartPage.background_value,
         button_color: smartPage.button_color, highlight_color: smartPage.highlight_color, form_button_color: smartPage.form_button_color,
         button_shape: smartPage.button_shape, button_variant: smartPage.button_variant, button_border_width: smartPage.button_border_width,
+        button_effect: smartPage.button_effect, form_background_color: smartPage.form_background_color, form_border_color: smartPage.form_border_color,
+        form_border_width: smartPage.form_border_width, form_effect: smartPage.form_effect, cover_shape: smartPage.cover_shape,
+        profile_border_enabled: smartPage.profile_border_enabled, profile_border_color: smartPage.profile_border_color,
         footer_text: smartPage.footer_text, capture_enabled: smartPage.capture_enabled, capture_config: smartPage.capture_config,
       }).select("id").single();
       if (insertError) throw insertError;
@@ -187,7 +190,7 @@ export default function ClientWorkspace() {
 
   async function savePage(publish = false) {
     if (!supabase || !selected || !smartPage || !pageDraft) return;
-    const colors = [pageDraft.button_color, pageDraft.highlight_color, pageDraft.form_button_color, ...(pageDraft.background_mode === "solid" ? [pageDraft.background_value] : [])];
+    const colors = [pageDraft.button_color, pageDraft.highlight_color, pageDraft.form_button_color, pageDraft.form_background_color, pageDraft.form_border_color, pageDraft.profile_border_color, ...(pageDraft.background_mode === "solid" ? [pageDraft.background_value] : [])];
     if (colors.some((color) => !/^#[0-9a-f]{6}$/i.test(color))) { setError("Revise as cores: use o formato hexadecimal completo, como #0F766E."); return; }
     await run(async () => {
       const nextVersion = smartPage.draft_version + 1;
@@ -206,18 +209,14 @@ export default function ClientWorkspace() {
     await run(async () => { const { error: updateError } = await supabase.from("page_links").update(patch).eq("id", link.id); if (updateError) throw updateError; await loadAccountData(selected); });
   }
 
-  async function moveLink(link: PageLink, direction: -1 | 1) {
+  async function reorderLinks(orderedIds: number[]) {
     if (!supabase || !selected) return;
-    const ordered = links.filter((item) => !["instagram", "facebook", "tiktok", "youtube", "linkedin"].includes(item.link_type));
-    const index = ordered.findIndex((item) => item.id === link.id); const target = ordered[index + direction];
-    if (!target) return;
     await run(async () => {
-      const [first, second] = await Promise.all([
-        supabase.from("page_links").update({ sort_order: target.sort_order }).eq("id", link.id),
-        supabase.from("page_links").update({ sort_order: link.sort_order }).eq("id", target.id),
-      ]);
-      if (first.error) throw first.error; if (second.error) throw second.error; await loadAccountData(selected);
-    });
+      const results = await Promise.all(orderedIds.map((id, index) => supabase.from("page_links").update({ sort_order: index }).eq("id", id)));
+      const failed = results.find((result) => result.error);
+      if (failed?.error) throw failed.error;
+      await loadAccountData(selected);
+    }, "Ordem atualizada.");
   }
 
   async function saveSocial(type: string, url: string) {
@@ -287,7 +286,7 @@ export default function ClientWorkspace() {
           {view === "presence" && <Presence establishment={selected} />}
           {view === "plates" && <PlatesView plates={plates} busy={busy} onActivate={activatePlate} />}
           {view === "team" && <TeamView employees={employees} busy={busy} onAdd={addEmployee} onToggle={(employee) => run(async () => { const { error: updateError } = await supabase.from("employees").update({ status: employee.status === "active" ? "inactive" : "active" }).eq("id", employee.id); if (updateError) throw updateError; await loadAccountData(selected); }, "Status atualizado.")} />}
-          {view === "page" && <BioSiteEditor pages={smartPages} page={smartPage} draft={pageDraft} setDraft={setPageDraft} links={links} pageLimit={pageLimit} busy={busy} onSelectPage={setSelectedPageId} onCreatePage={ensurePage} onDuplicatePage={duplicatePage} onSave={() => savePage(false)} onPublish={() => savePage(true)} onUpload={(kind, file) => void uploadPageMedia(kind, file)} onAddLink={addLink} onUpdateLink={(link, patch) => void updateLink(link, patch)} onDeleteLink={(link) => void run(async () => { const { error: deleteError } = await supabase.from("page_links").delete().eq("id", link.id); if (deleteError) throw deleteError; await loadAccountData(selected); }, "Link removido.")} onMoveLink={(link, direction) => void moveLink(link, direction)} onSaveSocial={(type, url) => void saveSocial(type, url)} />}
+          {view === "page" && <BioSiteEditor pages={smartPages} page={smartPage} draft={pageDraft} setDraft={setPageDraft} links={links} pageLimit={pageLimit} busy={busy} onSelectPage={setSelectedPageId} onCreatePage={ensurePage} onDuplicatePage={duplicatePage} onSave={() => savePage(false)} onPublish={() => savePage(true)} onUpload={(kind, file) => void uploadPageMedia(kind, file)} onAddLink={addLink} onUpdateLink={(link, patch) => void updateLink(link, patch)} onDeleteLink={(link) => void run(async () => { const { error: deleteError } = await supabase.from("page_links").delete().eq("id", link.id); if (deleteError) throw deleteError; await loadAccountData(selected); }, "Link removido.")} onReorderLinks={(ids) => void reorderLinks(ids)} onSaveSocial={(type, url) => void saveSocial(type, url)} />}
           {view === "contacts" && <ContactsView contacts={contacts} />}
           {view === "reports" && <ReportsView metrics={metrics} events={events} />}
           {view === "services" && <ServicesView subscriptions={subscriptions} />}
