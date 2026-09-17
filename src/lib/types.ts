@@ -74,6 +74,7 @@ export type CompetitorRow = {
 
 export type DiagnosticReport = {
   id: string;
+  accountId?: number;
   mode: "live" | "demo";
   generatedAt: string;
   input: DiagnosticInput;
@@ -102,4 +103,3 @@ export type DiagnosticReport = {
     marketRecords: number;
   };
 };
-

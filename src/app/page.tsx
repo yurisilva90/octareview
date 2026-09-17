@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import RouteRedirect from "./components/route-redirect";
 
 export default function Home() {
-  redirect("/comercial");
+  return <RouteRedirect to="/app/" />;
 }

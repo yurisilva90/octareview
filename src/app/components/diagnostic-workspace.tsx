@@ -7,6 +7,7 @@ import {
   Radar, Search, ShieldCheck, Sparkles, Star, Target, UsersRound,
 } from "lucide-react";
 import type { DiagnosticPillar, DiagnosticReport, PillarStatus } from "@/lib/types";
+import { requestDiagnostic } from "@/lib/supabase/diagnostics";
 
 const statusStyles: Record<PillarStatus, { label: string; className: string; dot: string }> = {
   strong: { label: "Forte", className: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
@@ -65,20 +66,14 @@ export default function DiagnosticWorkspace() {
   async function generate(mode: "live" | "demo") {
     setLoading(true); setError(null);
     try {
-      const response = await fetch("/api/diagnostics", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          businessName: form.businessName,
-          location: form.location,
-          category: form.category.trim() || undefined,
-          mode,
-          maxCompetitors: 10,
-          maxReviews: 40,
-        }),
+      const data = await requestDiagnostic({
+        businessName: form.businessName,
+        location: form.location,
+        category: form.category.trim(),
+        mode,
+        maxCompetitors: 10,
+        maxReviews: 40,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Não foi possível gerar o diagnóstico.");
       setReport(data);
       requestAnimationFrame(() => document.getElementById("report")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (caught) {
