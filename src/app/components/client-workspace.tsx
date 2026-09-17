@@ -38,6 +38,56 @@ function locationOf(item: Establishment) { return [item.city, item.state].filter
 function dateTime(value: string) { return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)); }
 function Card({ children, className = "" }: { children: ReactNode; className?: string }) { return <section className={`rounded-2xl bg-white shadow-[0_8px_30px_rgba(15,23,42,.05)] ${className}`}>{children}</section>; }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block text-xs font-semibold text-slate-600">{label}<div className="mt-2">{children}</div></label>; }
+
+const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
+
+function canvasBlob(canvas: HTMLCanvasElement, type: string, quality: number) {
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Não foi possível otimizar a imagem.")), type, quality));
+}
+
+async function optimizeImage(file: File, maxWidth: number, maxHeight: number, targetBytes = MAX_MEDIA_BYTES) {
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = new window.Image();
+    image.src = sourceUrl;
+    await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error("Não foi possível ler a imagem.")); });
+    const scale = Math.min(1, maxWidth / image.naturalWidth, maxHeight / image.naturalHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+    let quality = 0.82;
+    let blob = await canvasBlob(canvas, "image/webp", quality);
+    while (blob.size > targetBytes && quality > 0.28) { quality -= 0.08; blob = await canvasBlob(canvas, "image/webp", quality); }
+    if (blob.size > targetBytes) throw new Error(`Não foi possível reduzir a imagem para menos de ${Math.round(targetBytes / 1024 / 1024)} MB.`);
+    return { file: new File([blob], file.name.replace(/\.[^.]+$/, ".webp"), { type: "image/webp", lastModified: Date.now() }), convertedAnimation: file.type === "image/gif" };
+  } finally { URL.revokeObjectURL(sourceUrl); }
+}
+
+async function optimizeVideo(file: File) {
+  if (file.size <= MAX_MEDIA_BYTES) return file;
+  const video = document.createElement("video");
+  video.muted = true; video.playsInline = true; video.src = URL.createObjectURL(file);
+  await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error("Não foi possível ler o vídeo.")); });
+  const captureStream = (video as HTMLVideoElement & { captureStream?: () => MediaStream }).captureStream;
+  if (!captureStream || typeof MediaRecorder === "undefined") throw new Error("Este navegador não consegue reduzir vídeos automaticamente. Envie um MP4 menor que 10 MB.");
+  const stream = captureStream.call(video);
+  for (const bitrate of [1_200_000, 700_000, 400_000]) {
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8") ? "video/webm;codecs=vp8" : "video/webm";
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: bitrate });
+    const chunks: Blob[] = [];
+    const result = new Promise<Blob>((resolve, reject) => { recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data); recorder.onerror = () => reject(new Error("Falha ao otimizar o vídeo.")); recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType })); });
+    recorder.start();
+    await video.play();
+    await new Promise<void>((resolve) => { video.onended = () => resolve(); });
+    recorder.stop();
+    const blob = await result;
+    if (blob.size <= MAX_MEDIA_BYTES) { URL.revokeObjectURL(video.src); return new File([blob], file.name.replace(/\.[^.]+$/, ".webm"), { type: mimeType, lastModified: Date.now() }); }
+    video.currentTime = 0;
+  }
+  URL.revokeObjectURL(video.src);
+  throw new Error("Não foi possível reduzir o vídeo para menos de 10 MB. Tente um vídeo mais curto.");
+}
 const inputClass = "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
 
 export default function ClientWorkspace() {
@@ -249,31 +299,40 @@ export default function ClientWorkspace() {
 
   async function uploadPageMedia(kind: "logo" | "cover", file: File) {
     if (!supabase || !selected || !smartPage || !pageDraft) { setError("Faça login e selecione uma página antes de enviar o arquivo."); return; }
-    const detectedCoverType = kind === "cover"
+    let detectedCoverType: PageDraft["cover_type"] | undefined = kind === "cover"
       ? file.type.startsWith("video/") ? "video" : file.type === "image/gif" ? "animation" : "image"
       : undefined;
     const rules = kind === "logo"
       ? { max: 2 * 1024 * 1024, types: ["image/jpeg", "image/png", "image/webp"] }
-      : detectedCoverType === "video"
-        ? { max: 20 * 1024 * 1024, types: ["video/mp4", "video/webm"] }
+        : detectedCoverType === "video"
+        ? { max: MAX_MEDIA_BYTES, types: ["video/mp4", "video/webm"] }
         : detectedCoverType === "animation"
           ? { max: 10 * 1024 * 1024, types: ["image/gif", "image/webp"] }
           : { max: 5 * 1024 * 1024, types: ["image/jpeg", "image/png", "image/webp"] };
     if (!rules.types.includes(file.type)) { setError("Formato de arquivo não permitido para esta opção."); return; }
-    if (file.size > rules.max) { setError(`O arquivo ultrapassa o limite de ${Math.round(rules.max / 1024 / 1024)} MB.`); return; }
-    const previewUrl = URL.createObjectURL(file);
-    setError(undefined);
-    setPageDraft({ ...pageDraft, ...(kind === "logo" ? { logo_url: previewUrl } : { cover_url: previewUrl, cover_type: detectedCoverType ?? pageDraft.cover_type }) });
     await run(async () => {
-      const extension = (file.name.split(".").pop() || (file.type.split("/")[1] ?? "bin")).toLowerCase().replace(/[^a-z0-9]/g, "");
+      setError(undefined);
+      let optimizedFile = file;
+      let convertedAnimation = false;
+      if (file.size > rules.max || file.type === "image/gif") {
+        setError("Otimizando arquivo automaticamente…");
+        if (file.type.startsWith("video/")) optimizedFile = await optimizeVideo(file);
+        else { const result = await optimizeImage(file, kind === "logo" ? 800 : 1600, kind === "logo" ? 800 : 900, rules.max); optimizedFile = result.file; convertedAnimation = result.convertedAnimation; }
+      }
+      if (optimizedFile.size > rules.max) throw new Error(`O arquivo continua acima do limite de ${Math.round(rules.max / 1024 / 1024)} MB após a otimização.`);
+      if (convertedAnimation) detectedCoverType = "image";
+      const previewUrl = URL.createObjectURL(optimizedFile);
+      setPageDraft({ ...pageDraft, ...(kind === "logo" ? { logo_url: previewUrl } : { cover_url: previewUrl, cover_type: detectedCoverType ?? pageDraft.cover_type }) });
+      const extension = (optimizedFile.name.split(".").pop() || (optimizedFile.type.split("/")[1] ?? "bin")).toLowerCase().replace(/[^a-z0-9]/g, "");
       const path = `${selected.id}/${smartPage.id}/${kind}/${crypto.randomUUID()}.${extension}`;
-      const { error: uploadError } = await supabase.storage.from("biosite-media").upload(path, file, { contentType: file.type, upsert: false });
+      const { error: uploadError } = await supabase.storage.from("biosite-media").upload(path, optimizedFile, { contentType: optimizedFile.type, upsert: false });
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from("biosite-media").getPublicUrl(path);
       const column = kind === "logo" ? "logo_url" : "cover_url";
       const { error: updateError } = await supabase.from("smart_pages").update({ [column]: data.publicUrl, ...(kind === "cover" && detectedCoverType ? { cover_type: detectedCoverType } : {}) }).eq("id", smartPage.id);
       if (updateError) throw updateError;
       await loadAccountData(selected);
+      setError(undefined);
     }, kind === "logo" ? "Logo atualizada." : "Capa atualizada.");
   }
 
