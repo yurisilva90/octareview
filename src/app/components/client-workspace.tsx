@@ -248,16 +248,22 @@ export default function ClientWorkspace() {
   }
 
   async function uploadPageMedia(kind: "logo" | "cover", file: File) {
-    if (!supabase || !selected || !smartPage || !pageDraft) return;
+    if (!supabase || !selected || !smartPage || !pageDraft) { setError("Faça login e selecione uma página antes de enviar o arquivo."); return; }
+    const detectedCoverType = kind === "cover"
+      ? file.type.startsWith("video/") ? "video" : file.type === "image/gif" ? "animation" : "image"
+      : undefined;
     const rules = kind === "logo"
       ? { max: 2 * 1024 * 1024, types: ["image/jpeg", "image/png", "image/webp"] }
-      : pageDraft.cover_type === "video"
+      : detectedCoverType === "video"
         ? { max: 20 * 1024 * 1024, types: ["video/mp4", "video/webm"] }
-        : pageDraft.cover_type === "animation"
+        : detectedCoverType === "animation"
           ? { max: 10 * 1024 * 1024, types: ["image/gif", "image/webp"] }
           : { max: 5 * 1024 * 1024, types: ["image/jpeg", "image/png", "image/webp"] };
     if (!rules.types.includes(file.type)) { setError("Formato de arquivo não permitido para esta opção."); return; }
     if (file.size > rules.max) { setError(`O arquivo ultrapassa o limite de ${Math.round(rules.max / 1024 / 1024)} MB.`); return; }
+    const previewUrl = URL.createObjectURL(file);
+    setError(undefined);
+    setPageDraft({ ...pageDraft, ...(kind === "logo" ? { logo_url: previewUrl } : { cover_url: previewUrl, cover_type: detectedCoverType ?? pageDraft.cover_type }) });
     await run(async () => {
       const extension = (file.name.split(".").pop() || (file.type.split("/")[1] ?? "bin")).toLowerCase().replace(/[^a-z0-9]/g, "");
       const path = `${selected.id}/${smartPage.id}/${kind}/${crypto.randomUUID()}.${extension}`;
@@ -265,7 +271,7 @@ export default function ClientWorkspace() {
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from("biosite-media").getPublicUrl(path);
       const column = kind === "logo" ? "logo_url" : "cover_url";
-      const { error: updateError } = await supabase.from("smart_pages").update({ [column]: data.publicUrl }).eq("id", smartPage.id);
+      const { error: updateError } = await supabase.from("smart_pages").update({ [column]: data.publicUrl, ...(kind === "cover" && detectedCoverType ? { cover_type: detectedCoverType } : {}) }).eq("id", smartPage.id);
       if (updateError) throw updateError;
       await loadAccountData(selected);
     }, kind === "logo" ? "Logo atualizada." : "Capa atualizada.");
