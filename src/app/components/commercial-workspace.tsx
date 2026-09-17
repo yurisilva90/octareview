@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ArrowLeft, ArrowRight, BookOpen, Building2, CalendarClock, Check,
   ChevronRight, CircleAlert, CircleDollarSign, ClipboardCheck,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { DiagnosticReport } from "@/lib/types";
 import { requestDiagnostic } from "@/lib/supabase/diagnostics";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { withBasePath } from "@/lib/site";
 import { DiagnosticReportView } from "./diagnostic-workspace";
 
@@ -59,53 +60,6 @@ type LeadDraft = {
   potential: Potential;
 };
 
-const initialLeads: Lead[] = [
-  {
-    id: "studio-aurora", name: "Studio Aurora", category: "Salão de beleza",
-    location: "Centro, Teresópolis", distance: "0,8 km", rating: 4.6, reviews: 128,
-    potential: "Alto", stage: "Novo", followUp: "Retorno agendado", returnReason: "Enviar diagnóstico",
-    returnAt: "2026-09-15T14:30", responsible: "Yuri Silva", phone: "5521998765432",
-    email: "contato@studioaurora.com.br", notes: "Pedir para falar com a proprietária. Maior movimento depois das 14h.",
-    profile: "Presença local em desenvolvimento",
-    opportunity: "A reputação é competitiva, mas a empresa aparece fora do grupo de maior destaque na busca analisada.",
-    approach: "Quero mostrar onde o Studio já está forte e três oportunidades objetivas para transformar essa reputação em mais presença local.",
-    purchaseUrl: "", createdAt: "2026-09-12T10:20", lastContactAt: "2026-09-14T16:10",
-  },
-  {
-    id: "bella-pizzaria", name: "Bella Pizzaria", category: "Pizzaria",
-    location: "Várzea, Teresópolis", distance: "1,4 km", rating: 4.4, reviews: 347,
-    potential: "Alto", stage: "Proposta enviada", followUp: "Aguardando retorno", returnReason: "Decisão com sócio",
-    returnAt: "2026-09-15T15:30", responsible: "Yuri Silva", phone: "5521998123456",
-    email: "administracao@bellapizzaria.com.br", notes: "Proposta apresentada. Decisão será feita com o segundo sócio.",
-    profile: "Alto potencial de relacionamento",
-    opportunity: "O volume de clientes e avaliações cria espaço para medir relacionamento, retorno e conversão além do Google.",
-    approach: "Vocês já atraem muita opinião pública. A proposta é transformar cada ponto de contato em reputação, relacionamento e dados.",
-    purchaseUrl: "", createdAt: "2026-09-08T09:00", lastContactAt: "2026-09-14T11:40",
-  },
-  {
-    id: "oficina-torque", name: "Oficina Torque", category: "Oficina mecânica",
-    location: "Alto, Teresópolis", distance: "2,1 km", rating: 4.8, reviews: 42,
-    potential: "Médio", stage: "Contato iniciado", followUp: "Retorno agendado", returnReason: "Cobrar proposta",
-    returnAt: "2026-09-16T10:00", responsible: "Yuri Silva", phone: "5521997456789",
-    email: "oficinatorque@email.com", notes: "Cliente prefere contato por WhatsApp antes das 11h.",
-    profile: "Boa reputação, baixo volume",
-    opportunity: "A nota transmite confiança, mas ainda há pouca prova social diante de concorrentes mais conhecidos.",
-    approach: "O atendimento já é bem avaliado. Quero mostrar como tornar essa satisfação mais visível para quem ainda não conhece a oficina.",
-    purchaseUrl: "", createdAt: "2026-09-13T13:15", lastContactAt: "2026-09-15T09:20",
-  },
-  {
-    id: "clinica-serra", name: "Clínica Serra", category: "Clínica de saúde",
-    location: "Agriões, Teresópolis", distance: "1,9 km", rating: 4.9, reviews: 86,
-    potential: "Alto", stage: "Cliente ativo", followUp: "Pós-venda", returnReason: "Resultados do primeiro mês",
-    returnAt: "2026-09-19T11:00", responsible: "Yuri Silva", phone: "5521997001122",
-    email: "gestao@clinicaserra.com.br", notes: "Onboarding concluído. Acompanhar adesão da equipe e primeiras avaliações captadas.",
-    profile: "Cliente em implantação",
-    opportunity: "Consolidar a rotina de solicitação e resposta para manter o crescimento sustentável da reputação.",
-    approach: "Vamos revisar os primeiros resultados e ajustar a rotina para a equipe conseguir manter o processo sem atrito.",
-    purchaseUrl: "", createdAt: "2026-08-22T15:30", lastContactAt: "2026-09-13T17:10", clientSince: "2026-09-01",
-  },
-];
-
 const blankDraft: LeadDraft = {
   businessName: "", location: "Teresópolis, Brasil", category: "", responsible: "Yuri Silva",
   phone: "", email: "", potential: "Médio",
@@ -138,9 +92,10 @@ function draftFromLead(lead: Lead): LeadDraft {
 }
 
 export default function CommercialWorkspace() {
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [view, setView] = useState<View>("today");
-  const [leads, setLeads] = useState<Lead[]>(initialLeads);
-  const [selectedId, setSelectedId] = useState(initialLeads[0].id);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [reports, setReports] = useState<Record<string, DiagnosticReport>>({});
   const [presentation, setPresentation] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -152,22 +107,68 @@ export default function CommercialWorkspace() {
   const [potentialFilter, setPotentialFilter] = useState<"Todos" | Potential>("Todos");
   const [followUpFilter, setFollowUpFilter] = useState<"Todos" | FollowUpStatus>("Todos");
   const [stageFilter, setStageFilter] = useState<"Todos" | LeadStage>("Todos");
-  const [hydrated, setHydrated] = useState(false);
+  const [organizationId, setOrganizationId] = useState<number>();
+  const saveTimers = useRef<Record<string, number>>({});
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      const saved = window.localStorage.getItem("octareview-leads-v1");
-      if (saved) {
-        try { setLeads(JSON.parse(saved) as Lead[]); } catch { /* mantém os dados iniciais */ }
-      }
-      setHydrated(true);
+  const loadLeads = useCallback(async () => {
+    if (!supabase) return;
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return;
+    const { data: membership, error: memberError } = await supabase.from("organization_members").select("id,organization_id").eq("user_id", userData.user.id).eq("status", "active").limit(1).maybeSingle();
+    if (memberError) throw memberError;
+    if (!membership) throw new Error("Seu usuário ainda não está vinculado a uma organização.");
+    setOrganizationId(membership.organization_id);
+    const [accountsResult, membersResult, contactsResult, followUpsResult, diagnosticsResult, profilesResult] = await Promise.all([
+      supabase.from("accounts").select("id,public_id,name,category,city,state,address,phone,email,potential,lifecycle_status,pipeline_stage,follow_up_status,owner_member_id,client_since,metadata,created_at,updated_at").eq("organization_id", membership.organization_id).order("updated_at", { ascending: false }),
+      supabase.from("organization_members").select("id,user_id").eq("organization_id", membership.organization_id).eq("status", "active"),
+      supabase.from("contacts").select("account_id,full_name,email,phone,whatsapp,is_primary").eq("organization_id", membership.organization_id).order("is_primary", { ascending: false }),
+      supabase.from("follow_ups").select("account_id,reason,status,due_at").eq("organization_id", membership.organization_id).in("status", ["pending", "scheduled", "overdue"]).order("due_at"),
+      supabase.from("diagnostics").select("account_id,report,created_at").eq("organization_id", membership.organization_id).eq("status", "completed").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id,full_name,email"),
+    ]);
+    const firstError = [accountsResult, membersResult, contactsResult, followUpsResult, diagnosticsResult, profilesResult].find((result) => result.error)?.error;
+    if (firstError) throw firstError;
+    const members = new Map((membersResult.data ?? []).map((member) => [member.id, member.user_id]));
+    const profiles = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.full_name || profile.email || "Responsável"]));
+    const contacts = new Map<number, { full_name: string; email: string | null; phone: string | null; whatsapp: string | null }>();
+    for (const contact of contactsResult.data ?? []) if (!contacts.has(contact.account_id)) contacts.set(contact.account_id, contact);
+    const followUps = new Map<number, { reason: string; status: string; due_at: string }>();
+    for (const followUp of followUpsResult.data ?? []) if (!followUps.has(followUp.account_id)) followUps.set(followUp.account_id, followUp);
+    const latestReports = new Map<number, DiagnosticReport>();
+    for (const diagnostic of diagnosticsResult.data ?? []) if (!latestReports.has(diagnostic.account_id) && diagnostic.report) latestReports.set(diagnostic.account_id, diagnostic.report as DiagnosticReport);
+    const stageMap: Record<string, LeadStage> = { new: "Novo", contact_started: "Contato iniciado", diagnostic_presented: "Diagnóstico apresentado", proposal_sent: "Proposta enviada", negotiation: "Negociação", won: "Fechado", onboarding: "Fechado", active: "Cliente ativo", renewal: "Renovação", lost: "Perdido" };
+    const followMap: Record<string, FollowUpStatus> = { none: "Sem retorno", waiting: "Aguardando retorno", scheduled: "Retorno agendado", closing: "Em fechamento", post_sale: "Pós-venda" };
+    const potentialMap: Record<string, Potential> = { high: "Alto", medium: "Médio", low: "Baixo" };
+    const reasonMap: Record<string, ReturnReason> = { send_diagnostic: "Enviar diagnóstico", follow_proposal: "Cobrar proposta", partner_decision: "Decisão com sócio", send_purchase_link: "Enviar link de compra", onboarding: "Implantação", first_month_results: "Resultados do primeiro mês", renewal: "Renovação", other: "Outro" };
+    const rows = (accountsResult.data ?? []).map((account) => {
+      const meta = account.metadata && typeof account.metadata === "object" ? account.metadata as Record<string, unknown> : {};
+      const contact = contacts.get(account.id); const followUp = followUps.get(account.id); const report = latestReports.get(account.id);
+      const ownerUserId = account.owner_member_id ? members.get(account.owner_member_id) : undefined;
+      const id = String(account.public_id);
+      return {
+        id, name: account.name, category: account.category || "Categoria não informada",
+        location: account.address || [account.city, account.state].filter(Boolean).join(", ") || "Localização não informada", distance: "—",
+        rating: Number(report?.summary.rating ?? meta.rating ?? 0), reviews: Number(report?.summary.reviewsCount ?? meta.reviews ?? 0),
+        potential: potentialMap[account.potential] ?? "Médio", stage: stageMap[account.pipeline_stage] ?? "Novo",
+        followUp: followMap[account.follow_up_status] ?? "Sem retorno", returnReason: reasonMap[followUp?.reason ?? String(meta.returnReason ?? "send_diagnostic")] ?? "Outro",
+        returnAt: followUp?.due_at ?? (typeof meta.returnAt === "string" ? meta.returnAt : undefined),
+        responsible: ownerUserId ? profiles.get(ownerUserId) ?? "Responsável" : "Não atribuído",
+        phone: account.phone || contact?.whatsapp || contact?.phone || "", email: account.email || contact?.email || "",
+        notes: typeof meta.notes === "string" ? meta.notes : "", profile: report?.summary.profile ?? String(meta.profile ?? "Diagnóstico ainda não realizado"),
+        opportunity: report?.summary.narrative ?? String(meta.opportunity ?? "Diagnóstico ainda não realizado."), approach: report?.opportunities[0]?.solution ?? String(meta.approach ?? "Entender o momento do negócio e preparar o diagnóstico."),
+        purchaseUrl: typeof meta.purchaseUrl === "string" ? meta.purchaseUrl : "", createdAt: account.created_at, lastContactAt: account.updated_at,
+        clientSince: account.client_since ?? undefined, databaseAccountId: account.id,
+      } satisfies Lead;
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
+    setLeads(rows); setSelectedId((current) => current && rows.some((lead) => lead.id === current) ? current : rows[0]?.id ?? "");
+    setReports(Object.fromEntries(rows.flatMap((lead) => { const report = latestReports.get(lead.databaseAccountId!); return report ? [[lead.id, report]] : []; })));
+  }, [supabase]);
 
   useEffect(() => {
-    if (hydrated) window.localStorage.setItem("octareview-leads-v1", JSON.stringify(leads));
-  }, [hydrated, leads]);
+    const timers = saveTimers.current;
+    void (async () => { setLoading(true); try { await loadLeads(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível carregar os leads."); } finally { setLoading(false); } })();
+    return () => Object.values(timers).forEach((timer) => window.clearTimeout(timer));
+  }, [loadLeads]);
 
   const selected = leads.find((item) => item.id === selectedId) ?? leads[0];
   const filteredLeads = useMemo(() => leads.filter((lead) => {
@@ -195,7 +196,24 @@ export default function CommercialWorkspace() {
   }
 
   function updateLead(id: string, patch: Partial<Lead>) {
-    setLeads((items) => items.map((lead) => lead.id === id ? { ...lead, ...patch } : lead));
+    const current = leads.find((lead) => lead.id === id);
+    if (!current) return;
+    const next = { ...current, ...patch };
+    setLeads((items) => items.map((lead) => lead.id === id ? next : lead));
+    if (!supabase || !next.databaseAccountId) return;
+    window.clearTimeout(saveTimers.current[id]);
+    saveTimers.current[id] = window.setTimeout(() => {
+      const stageMap: Record<LeadStage, string> = { Novo: "new", "Contato iniciado": "contact_started", "Diagnóstico apresentado": "diagnostic_presented", "Proposta enviada": "proposal_sent", Negociação: "negotiation", Fechado: "won", "Cliente ativo": "active", Renovação: "renewal", Perdido: "lost" };
+      const followMap: Record<FollowUpStatus, string> = { "Sem retorno": "none", "Aguardando retorno": "waiting", "Retorno agendado": "scheduled", "Em fechamento": "closing", "Pós-venda": "post_sale" };
+      const potentialMap: Record<Potential, string> = { Alto: "high", Médio: "medium", Baixo: "low" };
+      const lifecycle = next.stage === "Perdido" ? "lost" : next.stage === "Cliente ativo" ? "active" : next.stage === "Fechado" ? "onboarding" : "lead";
+      void supabase.from("accounts").update({
+        name: next.name, category: next.category, address: next.location, phone: next.phone || null, email: next.email || null,
+        potential: potentialMap[next.potential], pipeline_stage: stageMap[next.stage], follow_up_status: followMap[next.followUp], lifecycle_status: lifecycle,
+        client_since: next.clientSince || null, closed_at: next.stage === "Fechado" || next.stage === "Cliente ativo" ? new Date().toISOString() : null,
+        metadata: { notes: next.notes, responsible: next.responsible, returnReason: next.returnReason, returnAt: next.returnAt ?? null, profile: next.profile, opportunity: next.opportunity, approach: next.approach, purchaseUrl: next.purchaseUrl, rating: next.rating, reviews: next.reviews },
+      }).eq("id", next.databaseAccountId).then(({ error: saveError }) => { if (saveError) setError(saveError.message); });
+    }, 650);
   }
 
   function createLead(report?: DiagnosticReport) {
@@ -218,10 +236,23 @@ export default function CommercialWorkspace() {
     return id;
   }
 
-  function saveWithoutDiagnostic(event: FormEvent) {
+  async function saveWithoutDiagnostic(event: FormEvent) {
     event.preventDefault();
-    if (!draft.businessName.trim() || !draft.location.trim()) return;
-    createLead(); setView("lead"); window.scrollTo({ top: 0, behavior: "smooth" });
+    if (!supabase || !organizationId || !draft.businessName.trim() || !draft.location.trim()) return;
+    setLoading(true); setError(null);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const potentialMap: Record<Potential, string> = { Alto: "high", Médio: "medium", Baixo: "low" };
+      const { data, error: insertError } = await supabase.from("accounts").insert({
+        organization_id: organizationId, name: draft.businessName.trim(), category: draft.category.trim() || null,
+        address: draft.location.trim(), phone: draft.phone.trim() || null, email: draft.email.trim() || null,
+        potential: potentialMap[draft.potential], lifecycle_status: "lead", pipeline_stage: "new", follow_up_status: "none",
+        source: "manual", created_by: userData.user?.id, metadata: { responsible: draft.responsible.trim() || "Não atribuído" },
+      }).select("public_id").single();
+      if (insertError) throw insertError;
+      await loadLeads(); setSelectedId(String(data.public_id)); setView("lead"); window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível criar o lead."); }
+    finally { setLoading(false); }
   }
 
   async function requestReport(mode: "live" | "demo", leadId?: string) {
@@ -381,7 +412,7 @@ function LeadView({ lead, visited, loading, error, hasReport, draft, setDraft, o
       <button onClick={onBack} className="flex min-h-11 items-center gap-2 text-sm font-semibold text-[#526b7c]"><ArrowLeft size={18} />Voltar aos leads</button>
       <section className="overflow-hidden rounded-[24px] border border-[#dbe7ec] bg-white"><div className="bg-[linear-gradient(135deg,#052b58,#087d87)] p-5 text-white sm:p-6"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-[#bed7df]">{lead.category}</p><h1 className="mt-1 truncate text-[28px] font-semibold tracking-[-0.04em]">{lead.name}</h1><p className="mt-2 flex items-center gap-2 text-sm text-[#d1e2e6]"><MapPin size={15} />{lead.location}</p></div><span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${potentialStyle[lead.potential]}`}>{lead.potential}</span></div><div className="mt-5 flex items-center gap-4"><span className="flex items-center gap-1.5 text-lg font-semibold"><Star size={17} fill="#f4b63f" className="text-[#f4b63f]" />{lead.rating ? lead.rating.toFixed(1) : "—"}</span><span className="text-sm text-[#d1e2e6]">{lead.reviews} avaliações</span></div></div><div className="grid grid-cols-2 divide-x divide-[#eaf0f2] p-4"><div className="px-2"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#8397a2]">Etapa</p><p className="mt-1 text-sm font-semibold">{lead.stage}</p></div><div className="px-4"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#8397a2]">Follow-up</p><p className="mt-1 text-sm font-semibold">{lead.followUp}</p></div></div></section>
 
-      <section className="rounded-[22px] border border-[#dbe7ec] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Controle do lead</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="commercial-label">Etapa<select value={lead.stage} onChange={(event) => onUpdate({ stage: event.target.value as LeadStage })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{stages.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Potencial<select value={lead.potential} onChange={(event) => onUpdate({ potential: event.target.value as Potential })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{(["Alto", "Médio", "Baixo"] as const).map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Situação do follow-up<select value={lead.followUp} onChange={(event) => onUpdate({ followUp: event.target.value as FollowUpStatus })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{followUps.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Motivo do retorno<select value={lead.returnReason} onChange={(event) => onUpdate({ returnReason: event.target.value as ReturnReason })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{returnReasons.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label sm:col-span-2">Data e hora do retorno<input type="datetime-local" value={lead.returnAt ?? ""} onChange={(event) => onUpdate({ returnAt: event.target.value || undefined })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]" /></label></div><p className="mt-3 flex items-center gap-2 text-xs text-[#78909c]"><Check size={14} className="text-[#08a89c]" />Alterações salvas neste dispositivo</p></section>
+      <section className="rounded-[22px] border border-[#dbe7ec] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Controle do lead</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="commercial-label">Etapa<select value={lead.stage} onChange={(event) => onUpdate({ stage: event.target.value as LeadStage })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{stages.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Potencial<select value={lead.potential} onChange={(event) => onUpdate({ potential: event.target.value as Potential })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{(["Alto", "Médio", "Baixo"] as const).map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Situação do follow-up<select value={lead.followUp} onChange={(event) => onUpdate({ followUp: event.target.value as FollowUpStatus })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{followUps.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Motivo do retorno<select value={lead.returnReason} onChange={(event) => onUpdate({ returnReason: event.target.value as ReturnReason })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{returnReasons.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label sm:col-span-2">Data e hora do retorno<input type="datetime-local" value={lead.returnAt ?? ""} onChange={(event) => onUpdate({ returnAt: event.target.value || undefined })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]" /></label></div><p className="mt-3 flex items-center gap-2 text-xs text-[#78909c]"><Check size={14} className="text-[#08a89c]" />Alterações sincronizadas com a base da OctaReview</p></section>
 
       <section className="rounded-[22px] border border-[#dbe7ec] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Informações e contato</p><div className="mt-4 space-y-4"><label className="commercial-label">Responsável<div className="commercial-field"><UserRound size={18} /><input value={lead.responsible} onChange={(event) => { onUpdate({ responsible: event.target.value }); setDraft({ ...draft, responsible: event.target.value }); }} /></div></label><label className="commercial-label">Telefone<div className="commercial-field"><Phone size={18} /><input value={lead.phone} onChange={(event) => { onUpdate({ phone: event.target.value }); setDraft({ ...draft, phone: event.target.value }); }} inputMode="tel" /></div></label><label className="commercial-label">E-mail<div className="commercial-field"><Mail size={18} /><input value={lead.email} onChange={(event) => { onUpdate({ email: event.target.value }); setDraft({ ...draft, email: event.target.value }); }} inputMode="email" /></div></label><label className="commercial-label">Observações<textarea value={lead.notes} onChange={(event) => onUpdate({ notes: event.target.value })} rows={4} className="mt-2 w-full resize-none rounded-xl border border-[#d9e5ea] bg-white p-3 text-sm leading-6 text-[#264a60] outline-none focus:border-[#08a89c]" placeholder="Contexto da conversa, objeções e próximos passos" /></label></div><div className="mt-4 grid grid-cols-2 gap-3"><a href={`tel:${lead.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d9e5ea] text-sm font-semibold text-[#34566a]"><Phone size={16} />Ligar</a><a href={`https://wa.me/${lead.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#bfe9e2] bg-[#eafaf6] text-sm font-semibold text-[#087f69]"><MessageCircle size={16} />WhatsApp</a></div></section>
 
@@ -414,7 +445,7 @@ function PlatesView() {
 
 function MoreView() {
   const items = [{ icon: BookOpen, title: "Manual comercial", detail: "Produto, abordagem e roteiro de visita" }, { icon: MessageCircle, title: "Quebra de objeções", detail: "Respostas rápidas para a conversa" }, { icon: ClipboardCheck, title: "Fechamento e implantação", detail: "Checklist da venda ao cliente ativo" }];
-  return <div><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Apoio</p><h1 className="mt-1 text-[28px] font-semibold tracking-[-0.045em]">Mais ferramentas</h1><div className="mt-5 space-y-3"><Link href="/adm" className="flex min-h-[82px] w-full items-center gap-4 rounded-[20px] border border-[#bfe5e1] bg-[#f2fbfa] p-4 text-left"><span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#dff4f1] text-[#087f78]"><Building2 size={20} /></span><span className="min-w-0 flex-1"><span className="block font-semibold">Painel de gestão</span><span className="mt-1 block text-sm leading-5 text-[#708592]">Operação interna, clientes e cobrança</span></span><ChevronRight size={18} className="text-[#8aa0ab]" /></Link>{items.map(({ icon: Icon, title, detail }) => <button key={title} className="flex min-h-[82px] w-full items-center gap-4 rounded-[20px] border border-[#dbe7ec] bg-white p-4 text-left"><span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8f7f6] text-[#087f78]"><Icon size={20} /></span><span className="min-w-0 flex-1"><span className="block font-semibold">{title}</span><span className="mt-1 block text-sm leading-5 text-[#708592]">{detail}</span></span><ChevronRight size={18} className="text-[#8aa0ab]" /></button>)}</div><div className="mt-5 rounded-[20px] border border-dashed border-[#cbdade] p-5 text-center"><p className="text-sm font-semibold">OctaReview comercial</p><p className="mt-2 text-sm leading-6 text-[#708592]">Nesta fase os leads ficam salvos no aparelho. A sincronização entre vendedores entra com banco de dados e login.</p></div></div>;
+  return <div><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Apoio</p><h1 className="mt-1 text-[28px] font-semibold tracking-[-0.045em]">Mais ferramentas</h1><div className="mt-5 space-y-3"><Link href={withBasePath("/adm/")} className="flex min-h-[82px] w-full items-center gap-4 rounded-[20px] border border-[#bfe5e1] bg-[#f2fbfa] p-4 text-left"><span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#dff4f1] text-[#087f78]"><Building2 size={20} /></span><span className="min-w-0 flex-1"><span className="block font-semibold">Painel de gestão</span><span className="mt-1 block text-sm leading-5 text-[#708592]">Operação interna, clientes e cobrança</span></span><ChevronRight size={18} className="text-[#8aa0ab]" /></Link>{items.map(({ icon: Icon, title, detail }) => <button key={title} className="flex min-h-[82px] w-full items-center gap-4 rounded-[20px] border border-[#dbe7ec] bg-white p-4 text-left"><span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#e8f7f6] text-[#087f78]"><Icon size={20} /></span><span className="min-w-0 flex-1"><span className="block font-semibold">{title}</span><span className="mt-1 block text-sm leading-5 text-[#708592]">{detail}</span></span><ChevronRight size={18} className="text-[#8aa0ab]" /></button>)}</div><div className="mt-5 rounded-[20px] border border-dashed border-[#cbdade] p-5 text-center"><p className="text-sm font-semibold">OctaReview comercial</p><p className="mt-2 text-sm leading-6 text-[#708592]">Leads, diagnósticos e atualizações são sincronizados com o banco da organização.</p></div></div>;
 }
 
 function BottomNavigation({ active, onNavigate }: { active: MainView; onNavigate: (view: MainView) => void }) {
