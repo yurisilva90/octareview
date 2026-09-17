@@ -40,7 +40,7 @@ export default function PublicSmartPage() {
       setSource(incomingSource); setCampaign(incomingCampaign); setSessionId(currentSession);
       if (!slug) { setError("O endereço desta página está incompleto."); setLoading(false); return; }
       const { data, error: invokeError } = await supabase.functions.invoke("public-page", { body: { action: "load", slug } });
-      if (invokeError || data?.error) { setError(data?.error || invokeError?.message || "Página não encontrada."); setLoading(false); return; }
+      if (invokeError || data?.error) { setError(data?.error || "Esta página não está publicada ou o link expirou."); setLoading(false); return; }
       setPage(data.page as PublicPage); setLinks((data.links ?? []) as PublicLink[]); setLoading(false);
       void supabase.functions.invoke("public-page", { body: { action: "event", slug, eventType: incomingSource === "nfc" || incomingSource === "qr" ? "plate_open" : "page_view", source: incomingSource, campaign: incomingCampaign, sessionId: currentSession } });
     })();
@@ -59,7 +59,7 @@ export default function PublicSmartPage() {
     const fieldValues = Object.fromEntries(Array.from(form.entries()).filter(([key]) => !known.has(key)).map(([key, value]) => [key, String(value).slice(0, 300)]));
     const { data, error: invokeError } = await supabase.functions.invoke("public-page", { body: { action: "contact", slug: page.slug, source, campaign, sessionId, website: String(form.get("website") ?? ""), contact: { fullName: String(form.get("full_name") ?? ""), whatsapp: String(form.get("whatsapp") ?? ""), email: String(form.get("email") ?? ""), consentAccepted: form.get("consent") === "on", fieldValues } } });
     setSending(false);
-    if (invokeError || data?.error) { setError(data?.error || invokeError?.message || "Não foi possível enviar seus dados."); return; }
+    if (invokeError || data?.error) { setError(data?.error || "Não foi possível enviar seus dados agora. Tente novamente."); return; }
     setSuccess(data?.message || "Cadastro realizado com sucesso."); formElement.reset();
   }
 
