@@ -90,10 +90,26 @@ export default function ClientWorkspace() {
       supabase.from("interaction_events").select("event_type,source,occurred_at").eq("account_id", account.id).gte("occurred_at", since.toISOString()).order("occurred_at", { ascending: false }).limit(2000),
       supabase.from("subscriptions").select("id,status,quantity,unit_price,billing_interval,products(name,features)").eq("account_id", account.id).order("created_at", { ascending: false }),
     ]);
-    const firstError = [platesResult, employeesResult, pageResult, contactsResult, eventsResult, subscriptionsResult].find((result) => result.error)?.error;
+    let pageRows = pageResult.data;
+    if (pageResult.error) {
+      const fallback = await supabase.from("smart_pages").select("id,slug,status,page_type,is_primary,name,short_description,presentation_text,primary_color,logo_url,cover_url,cover_type,background_mode,background_value,button_color,highlight_color,form_button_color,button_shape,button_variant,button_border_width,footer_text,capture_enabled,capture_config,draft_version,published_version,published_at").eq("account_id", account.id).order("is_primary", { ascending: false }).order("created_at");
+      if (fallback.error) throw pageResult.error;
+      pageRows = (fallback.data ?? []).map((row) => ({
+        ...row,
+        button_effect: "shadow",
+        form_background_color: "#ffffff",
+        form_border_color: "#e2e8f0",
+        form_border_width: 1,
+        form_effect: "shadow",
+        cover_shape: "curve",
+        profile_border_enabled: true,
+        profile_border_color: "#ffffff",
+      }));
+    }
+    const firstError = [platesResult, employeesResult, contactsResult, eventsResult, subscriptionsResult].find((result) => result.error)?.error;
     if (firstError) throw firstError;
     setPlates((platesResult.data ?? []) as Plate[]); setEmployees((employeesResult.data ?? []) as Employee[]);
-    const pages = (pageResult.data ?? []) as SmartPage[]; setSmartPages(pages);
+    const pages = (pageRows ?? []) as SmartPage[]; setSmartPages(pages);
     const page = pages.find((item) => item.id === selectedPageId) ?? pages[0];
     setSelectedPageId(page?.id); setPageDraft(page ? pageToDraft(page) : undefined);
     const nextSubscriptions = (subscriptionsResult.data ?? []) as Subscription[];
