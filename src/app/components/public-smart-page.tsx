@@ -104,14 +104,14 @@ export default function PublicSmartPage() {
 
   return <main className="min-h-screen px-3 py-5 text-slate-950 sm:py-10" style={surfaceStyle}>
     <article className="mx-auto max-w-[520px] overflow-hidden rounded-[28px] bg-white/95 shadow-[0_24px_80px_rgba(15,23,42,.24)] backdrop-blur-sm">
-      <div className="relative h-48 overflow-hidden bg-slate-200">
-        {page.coverUrl && page.coverType === "video" ? <video src={page.coverUrl} className="size-full object-cover" muted autoPlay loop playsInline /> : page.coverUrl ? <div className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${page.coverUrl})` }} /> : <div className="size-full" style={{ background: `linear-gradient(135deg,${page.primaryColor},#0f172a)` }} />}
+      <div className="relative h-48 overflow-hidden" style={!page.coverUrl ? surfaceStyle : undefined}>
+        {page.coverUrl && page.coverType === "video" ? <video src={page.coverUrl} className="size-full object-cover" muted autoPlay loop playsInline /> : page.coverUrl ? <div className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${page.coverUrl})` }} /> : null}
       </div>
       <div className="px-5 pb-7 sm:px-8">
-        <div className="-mt-12 size-24 overflow-hidden rounded-full border-4 border-white bg-slate-900 bg-contain bg-center bg-no-repeat shadow-lg" style={page.logoUrl ? { backgroundImage: `url(${page.logoUrl})` } : undefined}>{!page.logoUrl && <span className="grid size-full place-items-center text-xl font-bold text-white">{page.name.slice(0, 2).toUpperCase()}</span>}</div>
+        <div className="flex flex-col items-center text-center"><div className="-mt-12 size-24 overflow-hidden rounded-full border-4 border-white bg-slate-900 bg-contain bg-center bg-no-repeat shadow-lg" style={page.logoUrl ? { backgroundImage: `url(${page.logoUrl})` } : undefined}>{!page.logoUrl && <span className="grid size-full place-items-center text-xl font-bold text-white">{page.name.slice(0, 2).toUpperCase()}</span>}</div>
         <h1 className="mt-4 text-3xl font-bold tracking-[-.045em]">{page.name}</h1>
         {page.shortDescription && <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{page.shortDescription}</p>}
-        {page.presentationText && <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-500">{page.presentationText}</p>}
+        {page.presentationText && <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-500">{page.presentationText}</p>}</div>
 
         <div className="mt-7 space-y-3">{contentLinks.map((link) => {
           const color = link.button_color || (link.highlighted ? page.highlightColor : page.buttonColor);
