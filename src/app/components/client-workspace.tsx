@@ -151,7 +151,7 @@ export default function ClientWorkspace() {
 
   function flash(message: string) { setNotice(message); window.setTimeout(() => setNotice(undefined), 3500); }
   async function signOut() { await supabase?.auth.signOut(); window.location.assign(withBasePath("/login/")); }
-  async function run(action: () => Promise<void>, success?: string) { setBusy(true); setError(undefined); try { await action(); if (success) flash(success); } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível concluir a ação."); } finally { setBusy(false); } }
+  async function run(action: () => Promise<void>, success?: string) { setBusy(true); setError(undefined); try { await action(); if (success) flash(success); } catch (caught) { const message = caught instanceof Error ? caught.message : "Não foi possível concluir a ação."; setError(/row-level security policy|permission denied/i.test(message) ? "Seu usuário não tem permissão para publicar este BioSite. O administrador precisa liberar o perfil de cliente para edição." : message); } finally { setBusy(false); } }
 
   async function createEstablishment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!supabase || !membership) return;
