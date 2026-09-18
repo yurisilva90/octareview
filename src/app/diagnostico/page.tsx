@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BarChart3, Building2, CheckCircle2, CircleAlert, LockKeyhole, MapPin, Star } from "lucide-react";
+import { BarChart3, CheckCircle2, CircleAlert, LockKeyhole, MapPin, Star } from "lucide-react";
 import type { DiagnosticReport } from "@/lib/types";
 
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; report: DiagnosticReport; businessName: string };
@@ -25,20 +25,26 @@ export default function PublicDiagnosticPage() {
   }
 
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("token") ?? "";
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    if (!token || !url || !key) {
-      setState({ status: "error", message: !token ? "Este link de diagnóstico é inválido." : "A configuração pública ainda não está disponível." });
-      return;
-    }
-    void fetch(`${url}/functions/v1/public-diagnostic`, {
-      method: "POST", headers: { "Content-Type": "application/json", apikey: key }, body: JSON.stringify({ token, action: "load" }),
-    }).then(async (response) => ({ response, payload: await response.json() as { report?: DiagnosticReport; businessName?: string; error?: string } }))
-      .then(({ response, payload }) => {
+    async function load() {
+      const token = new URLSearchParams(window.location.search).get("token") ?? "";
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!token || !url || !key) {
+        setState({ status: "error", message: !token ? "Este link de diagnóstico é inválido." : "A configuração pública ainda não está disponível." });
+        return;
+      }
+      try {
+        const response = await fetch(`${url}/functions/v1/public-diagnostic`, {
+          method: "POST", headers: { "Content-Type": "application/json", apikey: key }, body: JSON.stringify({ token, action: "load" }),
+        });
+        const payload = await response.json() as { report?: DiagnosticReport; businessName?: string; error?: string };
         if (!response.ok || !payload.report) throw new Error(payload.error ?? "Não foi possível carregar este diagnóstico.");
         setState({ status: "ready", report: payload.report, businessName: payload.businessName ?? payload.report.business.title });
-      }).catch((error: unknown) => setState({ status: "error", message: error instanceof Error ? error.message : "Não foi possível carregar este diagnóstico." }));
+      } catch (error) {
+        setState({ status: "error", message: error instanceof Error ? error.message : "Não foi possível carregar este diagnóstico." });
+      }
+    }
+    void load();
   }, []);
 
   if (state.status === "loading") return <main className="grid min-h-screen place-items-center bg-slate-50 text-slate-600">Preparando seu diagnóstico…</main>;
