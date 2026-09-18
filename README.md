@@ -62,7 +62,7 @@ Configure no repositório, em **Settings → Secrets and variables → Actions �
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-O build público é distribuído em `octareview-app`. A URL é `https://yurisilva90.github.io/octareview-app/`.
+O build público é distribuído em `octareview`. A URL é `https://yurisilva90.github.io/octareview/`.
 
 ## Limites conscientes desta versão
 

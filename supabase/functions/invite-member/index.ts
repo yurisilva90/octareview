@@ -16,7 +16,7 @@ const invite = withSupabase({ auth: "user" }, async (request, context) => {
     const { data: caller } = await context.supabaseAdmin.from("organization_members").select("id").eq("organization_id", organizationId).eq("user_id", userId).eq("role", "admin").eq("status", "active").maybeSingle();
     if (!caller) return json(request, { error: "Somente administradores podem convidar usuários." }, 403);
     if (accountId) { const { data: account } = await context.supabaseAdmin.from("accounts").select("id").eq("id", accountId).eq("organization_id", organizationId).maybeSingle(); if (!account) return json(request, { error: "Estabelecimento inválido." }, 400); }
-    const { data: invited, error: inviteError } = await context.supabaseAdmin.auth.admin.inviteUserByEmail(email, { data: { full_name: fullName, octareview_role: role }, redirectTo: "https://yurisilva90.github.io/octareview-app/login/" });
+    const { data: invited, error: inviteError } = await context.supabaseAdmin.auth.admin.inviteUserByEmail(email, { data: { full_name: fullName, octareview_role: role }, redirectTo: "https://yurisilva90.github.io/octareview/login/" });
     if (inviteError || !invited.user) { const detail = inviteError?.message.toLowerCase() ?? ""; if (detail.includes("already") || detail.includes("registered")) return json(request, { error: "Este e-mail já possui usuário. O vínculo de usuários existentes será liberado em Configurações." }, 409); throw inviteError ?? new Error("Convite não criado."); }
     const { error: memberError } = await context.supabaseAdmin.from("organization_members").insert({ organization_id: organizationId, user_id: invited.user.id, account_id: accountId, role, status: "active" });
     if (memberError) throw memberError;
