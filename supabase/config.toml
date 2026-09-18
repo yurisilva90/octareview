@@ -441,6 +441,12 @@ entrypoint = "./functions/public-page/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/public-page/*.html" ]
 
+[functions.public-diagnostic]
+enabled = true
+verify_jwt = false
+import_map = "./functions/public-diagnostic/deno.json"
+entrypoint = "./functions/public-diagnostic/index.ts"
+
 [functions.invite-member]
 enabled = true
 verify_jwt = true

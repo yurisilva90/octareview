@@ -45,6 +45,12 @@ function asNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+async function sha256(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function mapReview(value: unknown): ReviewRecord | null {
   if (!value || typeof value !== "object") return null;
   const review = value as UnknownRecord;
@@ -215,19 +221,30 @@ Deno.serve(async (request) => {
       if (accountError) throw accountError;
     }
 
-    const { error: diagnosticError } = await supabase.from("diagnostics").insert({
+    const { data: diagnostic, error: diagnosticError } = await supabase.from("diagnostics").insert({
       organization_id: membership.organization_id, account_id: accountId, requested_by: userData.user.id,
       status: "completed", mode: "live", provider: "apify", actor_id: actorId,
       input, report, started_at: report.generatedAt, completed_at: new Date().toISOString(),
-    });
+    }).select("id").single();
     if (diagnosticError) throw diagnosticError;
+    const publicToken = `${crypto.randomUUID().replaceAll("-", "")}${crypto.randomUUID().replaceAll("-", "")}`;
+    const { error: linkError } = await supabase.from("diagnostic_access_links").insert({
+      organization_id: membership.organization_id, account_id: accountId, diagnostic_id: diagnostic.id,
+      token_hash: await sha256(publicToken), created_by: userData.user.id,
+    });
+    if (linkError) throw linkError;
+    const { error: journeyError } = await supabase.from("diagnostic_journey_events").insert({
+      organization_id: membership.organization_id, account_id: accountId, diagnostic_id: diagnostic.id,
+      event_type: "diagnostic_generated", details: { provider: "apify", mode: "initial" },
+    });
+    if (journeyError) throw journeyError;
     await supabase.from("activities").insert({
       organization_id: membership.organization_id, account_id: accountId, actor_id: userData.user.id,
       activity_type: "diagnostic_completed", title: "Diagnóstico concluído",
       details: { diagnosticId: report.id, profile: report.summary.profile },
     });
 
-    return json(request, { ...report, accountId });
+    return json(request, { ...report, accountId, publicToken });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Não foi possível gerar o diagnóstico.";
     return json(request, { error: message }, 500);
