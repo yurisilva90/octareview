@@ -14,6 +14,7 @@ import type { DiagnosticReport } from "@/lib/types";
 import { requestDiagnostic } from "@/lib/supabase/diagnostics";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { withBasePath } from "@/lib/site";
+import { buildClosurePlan, buildFollowUpPayload, type FollowUpReason } from "@/lib/operations";
 import { DiagnosticReportView } from "./diagnostic-workspace";
 
 type MainView = "today" | "leads" | "plates" | "more";
@@ -108,6 +109,8 @@ export default function CommercialWorkspace() {
   const [followUpFilter, setFollowUpFilter] = useState<"Todos" | FollowUpStatus>("Todos");
   const [stageFilter, setStageFilter] = useState<"Todos" | LeadStage>("Todos");
   const [organizationId, setOrganizationId] = useState<number>();
+  const [memberId, setMemberId] = useState<number>();
+  const [userId, setUserId] = useState<string>();
   const saveTimers = useRef<Record<string, number>>({});
 
   const loadLeads = useCallback(async () => {
@@ -117,16 +120,18 @@ export default function CommercialWorkspace() {
     const { data: membership, error: memberError } = await supabase.from("organization_members").select("id,organization_id").eq("user_id", userData.user.id).eq("status", "active").limit(1).maybeSingle();
     if (memberError) throw memberError;
     if (!membership) throw new Error("Seu usuário ainda não está vinculado a uma organização.");
-    setOrganizationId(membership.organization_id);
-    const [accountsResult, membersResult, contactsResult, followUpsResult, diagnosticsResult, profilesResult] = await Promise.all([
+    setOrganizationId(membership.organization_id); setMemberId(membership.id); setUserId(userData.user.id);
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const [accountsResult, membersResult, contactsResult, followUpsResult, diagnosticsResult, profilesResult, activitiesResult] = await Promise.all([
       supabase.from("accounts").select("id,public_id,name,category,city,state,address,phone,email,potential,lifecycle_status,pipeline_stage,follow_up_status,owner_member_id,client_since,metadata,created_at,updated_at").eq("organization_id", membership.organization_id).order("updated_at", { ascending: false }),
       supabase.from("organization_members").select("id,user_id").eq("organization_id", membership.organization_id).eq("status", "active"),
       supabase.from("contacts").select("account_id,full_name,email,phone,whatsapp,is_primary").eq("organization_id", membership.organization_id).order("is_primary", { ascending: false }),
       supabase.from("follow_ups").select("account_id,reason,status,due_at").eq("organization_id", membership.organization_id).in("status", ["pending", "scheduled", "overdue"]).order("due_at"),
       supabase.from("diagnostics").select("account_id,report,created_at").eq("organization_id", membership.organization_id).eq("status", "completed").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id,full_name,email"),
+      supabase.from("activities").select("account_id,activity_type,occurred_at").eq("organization_id", membership.organization_id).gte("occurred_at", todayStart.toISOString()),
     ]);
-    const firstError = [accountsResult, membersResult, contactsResult, followUpsResult, diagnosticsResult, profilesResult].find((result) => result.error)?.error;
+    const firstError = [accountsResult, membersResult, contactsResult, followUpsResult, diagnosticsResult, profilesResult, activitiesResult].find((result) => result.error)?.error;
     if (firstError) throw firstError;
     const members = new Map((membersResult.data ?? []).map((member) => [member.id, member.user_id]));
     const profiles = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile.full_name || profile.email || "Responsável"]));
@@ -162,6 +167,8 @@ export default function CommercialWorkspace() {
     });
     setLeads(rows); setSelectedId((current) => current && rows.some((lead) => lead.id === current) ? current : rows[0]?.id ?? "");
     setReports(Object.fromEntries(rows.flatMap((lead) => { const report = latestReports.get(lead.databaseAccountId!); return report ? [[lead.id, report]] : []; })));
+    setRouteStarted((activitiesResult.data ?? []).some((activity) => activity.activity_type === "route_started"));
+    setVisited((activitiesResult.data ?? []).filter((activity) => activity.activity_type === "visit_started" && activity.account_id).map((activity) => String(rows.find((lead) => lead.databaseAccountId === activity.account_id)?.id ?? "")).filter(Boolean));
   }, [supabase]);
 
   useEffect(() => {
@@ -214,6 +221,66 @@ export default function CommercialWorkspace() {
         metadata: { notes: next.notes, responsible: next.responsible, returnReason: next.returnReason, returnAt: next.returnAt ?? null, profile: next.profile, opportunity: next.opportunity, approach: next.approach, purchaseUrl: next.purchaseUrl, rating: next.rating, reviews: next.reviews },
       }).eq("id", next.databaseAccountId).then(({ error: saveError }) => { if (saveError) setError(saveError.message); });
     }, 650);
+  }
+
+  async function recordActivity(activityType: string, title: string, accountId?: number, details: Record<string, unknown> = {}) {
+    if (!supabase || !organizationId) throw new Error("Não foi possível identificar sua organização.");
+    const { error: insertError } = await supabase.from("activities").insert({ organization_id: organizationId, account_id: accountId ?? null, actor_id: userId ?? null, activity_type: activityType, title, details });
+    if (insertError) throw insertError;
+  }
+
+  async function startRoute() {
+    if (routeStarted) return;
+    setLoading(true); setError(null);
+    try { await recordActivity("route_started", "Rota comercial iniciada"); setRouteStarted(true); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível iniciar a rota."); }
+    finally { setLoading(false); }
+  }
+
+  async function startVisit(lead: Lead) {
+    if (visited.includes(lead.id)) return;
+    setLoading(true); setError(null);
+    try {
+      if (!lead.databaseAccountId) throw new Error("Este lead ainda não foi salvo na base.");
+      await recordActivity("visit_started", "Visita comercial iniciada", lead.databaseAccountId);
+      setVisited((items) => [...items, lead.id]);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível iniciar a visita."); }
+    finally { setLoading(false); }
+  }
+
+  async function scheduleFollowUp(lead: Lead) {
+    if (!supabase || !organizationId || !lead.databaseAccountId) return setError("Salve o lead antes de agendar um retorno.");
+    setLoading(true); setError(null);
+    try {
+      const reasonMap: Record<ReturnReason, FollowUpReason> = { "Enviar diagnóstico": "send_diagnostic", "Cobrar proposta": "follow_proposal", "Decisão com sócio": "partner_decision", "Enviar link de compra": "send_purchase_link", "Implantação": "onboarding", "Resultados do primeiro mês": "first_month_results", Renovação: "renewal", Outro: "other" };
+      const payload = buildFollowUpPayload({ organizationId, accountId: lead.databaseAccountId, actorId: userId, responsibleMemberId: memberId, reason: reasonMap[lead.returnReason], dueAt: lead.returnAt ?? "" });
+      const { error: closeError } = await supabase.from("follow_ups").update({ status: "canceled" }).eq("organization_id", organizationId).eq("account_id", lead.databaseAccountId).in("status", ["pending", "scheduled", "overdue"]);
+      if (closeError) throw closeError;
+      const { error: insertError } = await supabase.from("follow_ups").insert(payload);
+      if (insertError) throw insertError;
+      await supabase.from("accounts").update({ follow_up_status: "scheduled" }).eq("id", lead.databaseAccountId);
+      await recordActivity("follow_up_scheduled", "Retorno agendado", lead.databaseAccountId, { reason: payload.reason, due_at: payload.due_at });
+      await loadLeads();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível agendar o retorno."); }
+    finally { setLoading(false); }
+  }
+
+  async function closeLead(lead: Lead) {
+    if (!supabase || !organizationId || !lead.databaseAccountId) return setError("Salve o lead antes de registrar o fechamento.");
+    setLoading(true); setError(null);
+    try {
+      const dueAt = lead.returnAt || new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 16);
+      const plan = buildClosurePlan({ organizationId, accountId: lead.databaseAccountId, actorId: userId, responsibleMemberId: memberId, dueAt });
+      const { error: accountError } = await supabase.from("accounts").update(plan.account).eq("id", lead.databaseAccountId);
+      if (accountError) throw accountError;
+      await supabase.from("follow_ups").update({ status: "canceled" }).eq("organization_id", organizationId).eq("account_id", lead.databaseAccountId).in("status", ["pending", "scheduled", "overdue"]);
+      const { error: followUpError } = await supabase.from("follow_ups").insert(plan.followUp);
+      if (followUpError) throw followUpError;
+      const { error: activityError } = await supabase.from("activities").insert(plan.activity);
+      if (activityError) throw activityError;
+      await loadLeads();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível registrar o fechamento."); }
+    finally { setLoading(false); }
   }
 
   function createLead(report?: DiagnosticReport) {
@@ -303,10 +370,10 @@ export default function CommercialWorkspace() {
     <main className="min-h-[100dvh] bg-[#f3f7fa] pb-24 text-[#082944]">
       <CommercialHeader />
       <div className="mx-auto w-full max-w-[760px] px-4 py-5 sm:px-6 sm:py-7">
-        {view === "today" && <TodayView leads={leads} routeStarted={routeStarted} onStart={() => setRouteStarted(true)} onOpen={openLead} onAll={() => navigate("leads")} onNew={startNewLead} />}
+        {view === "today" && <TodayView leads={leads} routeStarted={routeStarted} onStart={() => void startRoute()} onOpen={openLead} onAll={() => navigate("leads")} onNew={startNewLead} />}
         {view === "leads" && <LeadsView search={search} onSearch={setSearch} potential={potentialFilter} onPotential={setPotentialFilter} followUp={followUpFilter} onFollowUp={setFollowUpFilter} stage={stageFilter} onStage={setStageFilter} items={filteredLeads} onOpen={openLead} onNew={startNewLead} />}
         {view === "new-lead" && <NewLeadView draft={draft} setDraft={setDraft} loading={loading} error={error} onBack={() => navigate("leads")} onSave={saveWithoutDiagnostic} onDiagnostic={(mode) => void requestReport(mode)} />}
-        {view === "lead" && selected && <LeadView lead={selected} visited={visited.includes(selected.id)} loading={loading} error={error} hasReport={Boolean(reports[selected.id])} draft={draft} setDraft={setDraft} onBack={() => navigate("leads")} onVisit={() => setVisited((items) => items.includes(selected.id) ? items : [...items, selected.id])} onUpdate={(patch) => updateLead(selected.id, patch)} onDiagnostic={(mode) => void requestReport(mode, selected.id)} onReport={() => setView("report")} />}
+        {view === "lead" && selected && <LeadView lead={selected} visited={visited.includes(selected.id)} loading={loading} error={error} hasReport={Boolean(reports[selected.id])} draft={draft} setDraft={setDraft} onBack={() => navigate("leads")} onVisit={() => void startVisit(selected)} onUpdate={(patch) => updateLead(selected.id, patch)} onSchedule={() => void scheduleFollowUp(selected)} onClose={() => void closeLead(selected)} onDiagnostic={(mode) => void requestReport(mode, selected.id)} onReport={() => setView("report")} />}
         {view === "report" && selectedId && reports[selectedId] && <ReportView report={reports[selectedId]} onBack={() => setView("lead")} onPresent={() => setPresentation(true)} />}
         {view === "plates" && <PlatesView />}
         {view === "more" && <MoreView />}
@@ -401,7 +468,7 @@ function NewLeadView({ draft, setDraft, loading, error, onBack, onSave, onDiagno
   );
 }
 
-function LeadView({ lead, visited, loading, error, hasReport, draft, setDraft, onBack, onVisit, onUpdate, onDiagnostic, onReport }: { lead: Lead; visited: boolean; loading: boolean; error: string | null; hasReport: boolean; draft: LeadDraft; setDraft: (value: LeadDraft) => void; onBack: () => void; onVisit: () => void; onUpdate: (patch: Partial<Lead>) => void; onDiagnostic: (mode: "live" | "demo") => void; onReport: () => void }) {
+function LeadView({ lead, visited, loading, error, hasReport, draft, setDraft, onBack, onVisit, onUpdate, onSchedule, onClose, onDiagnostic, onReport }: { lead: Lead; visited: boolean; loading: boolean; error: string | null; hasReport: boolean; draft: LeadDraft; setDraft: (value: LeadDraft) => void; onBack: () => void; onVisit: () => void; onUpdate: (patch: Partial<Lead>) => void; onSchedule: () => void; onClose: () => void; onDiagnostic: (mode: "live" | "demo") => void; onReport: () => void }) {
   const closingMessage = `Olá! Segue o link para contratação da OctaReview: ${lead.purchaseUrl}`;
   const whatsappUrl = `https://wa.me/${lead.phone.replace(/\D/g, "")}?text=${encodeURIComponent(closingMessage)}`;
   const mailUrl = `mailto:${lead.email}?subject=${encodeURIComponent("Link de contratação OctaReview")}&body=${encodeURIComponent(closingMessage)}`;
@@ -412,7 +479,7 @@ function LeadView({ lead, visited, loading, error, hasReport, draft, setDraft, o
       <button onClick={onBack} className="flex min-h-11 items-center gap-2 text-sm font-semibold text-[#526b7c]"><ArrowLeft size={18} />Voltar aos leads</button>
       <section className="overflow-hidden rounded-[24px] border border-[#dbe7ec] bg-white"><div className="bg-[linear-gradient(135deg,#052b58,#087d87)] p-5 text-white sm:p-6"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-[#bed7df]">{lead.category}</p><h1 className="mt-1 truncate text-[28px] font-semibold tracking-[-0.04em]">{lead.name}</h1><p className="mt-2 flex items-center gap-2 text-sm text-[#d1e2e6]"><MapPin size={15} />{lead.location}</p></div><span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold ${potentialStyle[lead.potential]}`}>{lead.potential}</span></div><div className="mt-5 flex items-center gap-4"><span className="flex items-center gap-1.5 text-lg font-semibold"><Star size={17} fill="#f4b63f" className="text-[#f4b63f]" />{lead.rating ? lead.rating.toFixed(1) : "—"}</span><span className="text-sm text-[#d1e2e6]">{lead.reviews} avaliações</span></div></div><div className="grid grid-cols-2 divide-x divide-[#eaf0f2] p-4"><div className="px-2"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#8397a2]">Etapa</p><p className="mt-1 text-sm font-semibold">{lead.stage}</p></div><div className="px-4"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#8397a2]">Follow-up</p><p className="mt-1 text-sm font-semibold">{lead.followUp}</p></div></div></section>
 
-      <section className="rounded-[22px] border border-[#dbe7ec] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Controle do lead</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="commercial-label">Etapa<select value={lead.stage} onChange={(event) => onUpdate({ stage: event.target.value as LeadStage })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{stages.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Potencial<select value={lead.potential} onChange={(event) => onUpdate({ potential: event.target.value as Potential })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{(["Alto", "Médio", "Baixo"] as const).map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Situação do follow-up<select value={lead.followUp} onChange={(event) => onUpdate({ followUp: event.target.value as FollowUpStatus })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{followUps.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Motivo do retorno<select value={lead.returnReason} onChange={(event) => onUpdate({ returnReason: event.target.value as ReturnReason })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{returnReasons.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label sm:col-span-2">Data e hora do retorno<input type="datetime-local" value={lead.returnAt ?? ""} onChange={(event) => onUpdate({ returnAt: event.target.value || undefined })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]" /></label></div><p className="mt-3 flex items-center gap-2 text-xs text-[#78909c]"><Check size={14} className="text-[#08a89c]" />Alterações sincronizadas com a base da OctaReview</p></section>
+      <section className="rounded-[22px] border border-[#dbe7ec] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Controle do lead</p><div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="commercial-label">Etapa<select value={lead.stage} onChange={(event) => onUpdate({ stage: event.target.value as LeadStage })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{stages.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Potencial<select value={lead.potential} onChange={(event) => onUpdate({ potential: event.target.value as Potential })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{(["Alto", "Médio", "Baixo"] as const).map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Situação do follow-up<select value={lead.followUp} onChange={(event) => onUpdate({ followUp: event.target.value as FollowUpStatus })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{followUps.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label">Motivo do retorno<select value={lead.returnReason} onChange={(event) => onUpdate({ returnReason: event.target.value as ReturnReason })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]">{returnReasons.map((item) => <option key={item}>{item}</option>)}</select></label><label className="commercial-label sm:col-span-2">Data e hora do retorno<input type="datetime-local" value={lead.returnAt ?? ""} onChange={(event) => onUpdate({ returnAt: event.target.value || undefined })} className="mt-2 h-12 w-full rounded-xl border border-[#d9e5ea] bg-white px-3 text-sm text-[#264a60]" /></label></div><button disabled={loading || !lead.returnAt} onClick={onSchedule} className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#a8ddd5] bg-[#eafaf6] text-sm font-bold text-[#087f69] disabled:opacity-50"><CalendarClock size={17} />Agendar retorno</button><p className="mt-3 flex items-center gap-2 text-xs text-[#78909c]"><Check size={14} className="text-[#08a89c]" />Alterações sincronizadas com a base da OctaReview</p></section>
 
       <section className="rounded-[22px] border border-[#dbe7ec] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Informações e contato</p><div className="mt-4 space-y-4"><label className="commercial-label">Responsável<div className="commercial-field"><UserRound size={18} /><input value={lead.responsible} onChange={(event) => { onUpdate({ responsible: event.target.value }); setDraft({ ...draft, responsible: event.target.value }); }} /></div></label><label className="commercial-label">Telefone<div className="commercial-field"><Phone size={18} /><input value={lead.phone} onChange={(event) => { onUpdate({ phone: event.target.value }); setDraft({ ...draft, phone: event.target.value }); }} inputMode="tel" /></div></label><label className="commercial-label">E-mail<div className="commercial-field"><Mail size={18} /><input value={lead.email} onChange={(event) => { onUpdate({ email: event.target.value }); setDraft({ ...draft, email: event.target.value }); }} inputMode="email" /></div></label><label className="commercial-label">Observações<textarea value={lead.notes} onChange={(event) => onUpdate({ notes: event.target.value })} rows={4} className="mt-2 w-full resize-none rounded-xl border border-[#d9e5ea] bg-white p-3 text-sm leading-6 text-[#264a60] outline-none focus:border-[#08a89c]" placeholder="Contexto da conversa, objeções e próximos passos" /></label></div><div className="mt-4 grid grid-cols-2 gap-3"><a href={`tel:${lead.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d9e5ea] text-sm font-semibold text-[#34566a]"><Phone size={16} />Ligar</a><a href={`https://wa.me/${lead.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#bfe9e2] bg-[#eafaf6] text-sm font-semibold text-[#087f69]"><MessageCircle size={16} />WhatsApp</a></div></section>
 
@@ -423,7 +490,7 @@ function LeadView({ lead, visited, loading, error, hasReport, draft, setDraft, o
 
       <section className="rounded-[22px] border border-[#cde8e5] bg-[#f4fbfa] p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#52807f]">Diagnóstico</p><p className="mt-2 text-sm leading-6 text-[#526b7c]">O relatório fica vinculado a este lead e atualiza a oportunidade comercial.</p><div className="mt-4 grid gap-3 sm:grid-cols-2">{hasReport && <button onClick={onReport} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#052b58] px-4 text-sm font-bold text-white"><Presentation size={18} />Abrir diagnóstico</button>}<button disabled={loading} onClick={() => onDiagnostic(lead.id === "studio-aurora" ? "demo" : "live")} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#078b86] px-4 text-sm font-bold text-white disabled:opacity-60">{loading ? <LoaderCircle className="animate-spin" size={18} /> : <FileSearch size={18} />}{loading ? "Gerando..." : hasReport ? "Atualizar diagnóstico" : "Gerar diagnóstico"}</button></div></section>
 
-      <section className="rounded-[22px] border border-[#bfe9e2] bg-white p-5"><div className="flex items-start gap-3"><span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#eafaf6] text-[#087f69]"><Handshake size={21} /></span><div><p className="font-semibold">Fechamento</p><p className="mt-1 text-sm leading-6 text-[#708592]">Cole o link de compra e abra a mensagem pronta no canal escolhido.</p></div></div><label className="commercial-label mt-4">Link de compra<div className="commercial-field"><CircleDollarSign size={18} /><input value={lead.purchaseUrl} onChange={(event) => onUpdate({ purchaseUrl: event.target.value })} inputMode="url" placeholder="https://seu-checkout.com/..." /></div></label><div className="mt-3 grid grid-cols-2 gap-3">{canWhatsapp ? <a href={whatsappUrl} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#18a978] px-3 text-center text-sm font-bold text-white"><MessageCircle size={17} />WhatsApp</a> : <button disabled className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#dbe6e7] px-3 text-sm font-bold text-[#8ba0a7]"><MessageCircle size={17} />WhatsApp</button>}{canEmail ? <a href={mailUrl} className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#052b58] px-3 text-center text-sm font-bold text-white"><Mail size={17} />E-mail</a> : <button disabled className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#dbe6e7] px-3 text-sm font-bold text-[#8ba0a7]"><Mail size={17} />E-mail</button>}</div><button onClick={() => onUpdate({ stage: "Fechado", followUp: "Pós-venda", returnReason: "Implantação", clientSince: lead.clientSince ?? new Date().toISOString().slice(0, 10), lastContactAt: new Date().toISOString() })} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#a8ddd5] bg-[#eafaf6] text-sm font-bold text-[#087f69]"><Check size={18} />Registrar fechamento</button></section>
+      <section className="rounded-[22px] border border-[#bfe9e2] bg-white p-5"><div className="flex items-start gap-3"><span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#eafaf6] text-[#087f69]"><Handshake size={21} /></span><div><p className="font-semibold">Fechamento</p><p className="mt-1 text-sm leading-6 text-[#708592]">Cole o link de compra e abra a mensagem pronta no canal escolhido.</p></div></div><label className="commercial-label mt-4">Link de compra<div className="commercial-field"><CircleDollarSign size={18} /><input value={lead.purchaseUrl} onChange={(event) => onUpdate({ purchaseUrl: event.target.value })} inputMode="url" placeholder="https://seu-checkout.com/..." /></div></label><div className="mt-3 grid grid-cols-2 gap-3">{canWhatsapp ? <a href={whatsappUrl} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#18a978] px-3 text-center text-sm font-bold text-white"><MessageCircle size={17} />WhatsApp</a> : <button disabled className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#dbe6e7] px-3 text-sm font-bold text-[#8ba0a7]"><MessageCircle size={17} />WhatsApp</button>}{canEmail ? <a href={mailUrl} className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#052b58] px-3 text-center text-sm font-bold text-white"><Mail size={17} />E-mail</a> : <button disabled className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#dbe6e7] px-3 text-sm font-bold text-[#8ba0a7]"><Mail size={17} />E-mail</button>}</div><button disabled={loading} onClick={onClose} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#a8ddd5] bg-[#eafaf6] text-sm font-bold text-[#087f69] disabled:opacity-50"><Check size={18} />Registrar fechamento e iniciar implantação</button></section>
 
       <section className="rounded-[22px] border border-[#dbe7ec] bg-white p-5"><p className="text-xs font-bold uppercase tracking-[0.13em] text-[#78909c]">Histórico</p><div className="mt-4 space-y-4"><TimelineItem title="Lead criado" detail={formatDateTime(lead.createdAt)} /><TimelineItem title="Último contato" detail={formatDateTime(lead.lastContactAt)} />{lead.clientSince && <TimelineItem title="Virou cliente" detail={new Intl.DateTimeFormat("pt-BR").format(new Date(`${lead.clientSince}T12:00:00`))} />}</div></section>
       <button onClick={onVisit} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border px-4 text-sm font-bold ${visited ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-[#d9e5ea] bg-white text-[#34566a]"}`}>{visited ? <Check size={18} /> : <Play size={18} />}{visited ? "Visita iniciada" : "Iniciar visita"}</button>
